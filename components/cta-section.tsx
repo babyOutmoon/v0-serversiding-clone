@@ -15,11 +15,11 @@ export function CtaSection() {
           <div className="relative flex flex-col items-center px-8 py-16 text-center md:px-16 md:py-24">
             <h2 className="max-w-3xl text-balance text-3xl font-bold tracking-tight text-foreground md:text-4xl lg:text-5xl">
               Start Controlling Large Games Today With{" "}
-              <span className="text-primary">Serversiding.xyz</span>
+              <span className="text-primary">Moon Server-Side</span>
             </h2>
 
             <p className="mt-6 max-w-2xl text-pretty text-muted-foreground md:text-lg">
-              Bypass filtering enabled and any restrictions with our roblox executor and run the largest games. Zero downloads, huge script library, instant execution. Everything you need in one place. Starting at the cheap price of $9.99.
+              Bypass filtering enabled and any restrictions with our roblox executor and run the largest games. Zero downloads, huge script library, instant execution. Everything you need in one place. Starting at the cheap price of 500R$.
             </p>
 
             <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row">

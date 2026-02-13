@@ -10,11 +10,11 @@ import {
 const faqs = [
   {
     question: "What is this?",
-    answer: "Serversiding.xyz is a serversided ROBLOX web-panel interface allowing you to do anything you want in our supported games. We are one of the largest web based serverside in the market, with the best selection of supported games.",
+    answer: "moon serverside is a serversided ROBLOX in-game  interface allowing you to do anything you want in our supported games. We are one of the largest internal serverside in the market, with the best selection of supported games.",
   },
   {
     question: "How does this work?",
-    answer: "Simple. There is no download required to use serversiding.xyz. Our software is fully internal, and automatically loads in any game supported. We bypass filtering enabled, and this is not a traditional cheat/exploit, it is similar to being given access to admin in a game, and we work without breaking Roblox's terms of service.",
+    answer: "Simple. There is no download required to use moon serverside. Our software is fully internal, and automatically loads in any game supported. We bypass filtering enabled, and this is not a traditional cheat/exploit, it is similar to being given access to admin in a game, and we work without breaking Roblox's terms of service.",
   },
   {
     question: "How do I purchase this?",
@@ -22,15 +22,15 @@ const faqs = [
   },
   {
     question: "Does Byfron affect this?",
-    answer: "Due to our technology, we are not affected by the new Byfron Update. We don't tamper with roblox processes, we simply have built the system into the game itself, meaning updates won't affect our service. We aim for providing the best experience for our customers, and we will never put them at risk in any sort of way.",
+    answer: "No, we are not affected by the new Byfron Update. We don't tamper with roblox processes, we simply have built the system into the game itself, meaning updates won't affect our service. We aim for providing the best experience for our customers, and we will never put them at risk in any sort of way.",
   },
   {
     question: "Is this against ROBLOX TOS?",
-    answer: "Nope! serversiding.xyz is designed with safety in mind. You will not get banned from any platforms for using this product, and you can use it in any game we support! All script execution is done in a secure environment.",
+    answer: "Nope! moon server-side is designed with safety in mind. You will not get banned from any platforms for using this product, and you can use it in any game we support! All script execution is done in a secure environment.",
   },
   {
     question: "Is this illegal?",
-    answer: "No, like mentioned earlier, all of the games supported by serversiding.xyz are games we collaborated with. This means that you can use serversiding.xyz without worrying about getting in any trouble.",
+    answer: "No, like mentioned earlier, all of the games supported by moon server-side are games we collaborated with. This means that you can use moon server-side without worrying about getting in any trouble.",
   },
 ]
 

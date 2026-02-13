@@ -64,7 +64,7 @@ export function StatsSection() {
             Trusted by <span className="text-primary">Hundreds</span> of Customers
           </h2>
           <p className="mt-4 text-pretty text-muted-foreground">
-            serversiding.xyz is built by a team of experts and veterans in this community. We strive to deliver many high-quality supported games, and one of the best experiences you will have.
+            moon server-side is built by a team of experts and veterans in this community. We strive to deliver many high-quality supported games, and one of the best experiences you will have.
           </p>
         </div>
 

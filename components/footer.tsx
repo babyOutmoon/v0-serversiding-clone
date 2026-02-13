@@ -12,18 +12,18 @@ export function Footer() {
               <path d="M12 7v10" />
             </svg>
           </div>
-          <span className="text-sm font-semibold text-foreground">serversiding.xyz</span>
+          <span className="text-sm font-semibold text-foreground">moon server-side</span>
         </div>
 
         <nav className="flex items-center gap-6">
           <Link href="#features" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Features</Link>
           <Link href="#pricing" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Pricing</Link>
           <Link href="#faq" className="text-sm text-muted-foreground transition-colors hover:text-foreground">FAQ</Link>
-          <Link href="#" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Discord</Link>
+          <a href="https://discord.gg/YRF26H8bMA" target="_blank" rel="noopener noreferrer" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Discord</a>
         </nav>
 
         <p className="text-xs text-muted-foreground">
-          &copy; {new Date().getFullYear()} serversiding.xyz. All rights reserved.
+          &copy; {new Date().getFullYear()} Moon ServerSide. All rights reserved.
         </p>
       </div>
     </footer>

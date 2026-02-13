@@ -14,7 +14,7 @@ const cards = [
   {
     icon: Zap,
     title: "Live Execution",
-    description: "Our software is designed to be performant and be very quick. Any script you run replicates instantly on the game server you are in, even if you run it from a web panel.",
+    description: "Our software is designed to be performant and be very quick. Any script you run replicates instantly on the game server you are in, even if you run it from a internal panel.",
   },
 ]
 

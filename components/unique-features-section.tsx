@@ -40,7 +40,7 @@ export function UniqueFeaturesSection() {
               </div>
               <h3 className="text-xl font-semibold text-foreground">Fully Automatic</h3>
               <p className="mt-3 leading-relaxed text-muted-foreground">
-                The moment you purchase our product, you will receive the license in your email. You can use our dashboard to redeem your license and set your ROBLOX account, and plenty more.
+                The moment you purchase our product, you will receive the license in your Discord ticket.
               </p>
             </div>
           </div>
