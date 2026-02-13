@@ -18,7 +18,7 @@ export function Navbar() {
               <path d="M12 7v10" />
             </svg>
           </div>
-          <span className="text-sm font-semibold text-foreground">Roblox Serverside</span>
+          <span className="text-sm font-semibold text-foreground">Moon Server-Side</span>
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

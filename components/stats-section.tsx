@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { Info } from "lucide-react"
 
 const stats = [
-  { value: 500, suffix: "+", label: "customer accounts on serversiding.xyz", source: "Real time stats" },
+  { value: 500, suffix: "+", label: "customer accounts on moon serverside", source: "Real time stats" },
   { value: 1200, suffix: "+", label: "unique games logged since 2025", source: "Real time stats" },
   { value: 99.97, suffix: "%", label: "satisfaction rate from our customers", source: "TrustPilot Reviews" },
   { value: 50, suffix: "K+", label: "roblox scripts executed by our users", source: "Real time stats" },
@@ -64,7 +64,7 @@ export function StatsSection() {
             Trusted by <span className="text-primary">Hundreds</span> of Customers
           </h2>
           <p className="mt-4 text-pretty text-muted-foreground">
-            moon server-side is built by a team of experts and veterans in this community. We strive to deliver many high-quality supported games, and one of the best experiences you will have.
+            Moon server-side is built by a team of experts and veterans in this community. We strive to deliver many high-quality supported games, and one of the best experiences you will have.
           </p>
         </div>
 

@@ -1,9 +1,19 @@
+"use client"
+
+import { useState } from "react"
 import { ArrowRight } from "lucide-react"
 import Link from "next/link"
 
 export function CtaSection() {
+  const [showToast, setShowToast] = useState(false)
+
+  function handleTryFree() {
+    setShowToast(true)
+    setTimeout(() => setShowToast(false), 2000)
+  }
+
   return (
-    <section id="pricing" className="relative py-24 md:py-32">
+    <section className="relative py-24 md:py-32">
       <div className="mx-auto max-w-7xl px-6">
         <div className="relative overflow-hidden rounded-3xl border border-border/50 bg-card">
           {/* Background glows */}
@@ -24,20 +34,33 @@ export function CtaSection() {
 
             <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row">
               <Link
-                href="#"
+                href="#pricing"
                 className="group inline-flex items-center gap-2 rounded-lg bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25"
               >
                 Discover Plans
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
-              <Link
-                href="#"
+              <button
+                onClick={handleTryFree}
                 className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-8 py-3.5 text-sm font-semibold text-foreground transition-all hover:bg-secondary/80"
               >
                 Try for Free
-              </Link>
+              </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Toast notification */}
+      <div
+        className={`fixed bottom-8 left-1/2 z-50 -translate-x-1/2 transition-all duration-500 ease-out ${
+          showToast
+            ? "translate-y-0 opacity-100"
+            : "translate-y-4 opacity-0 pointer-events-none"
+        }`}
+      >
+        <div className="rounded-xl border border-primary/30 bg-card px-8 py-4 shadow-2xl shadow-primary/10 backdrop-blur-xl">
+          <p className="text-sm font-semibold text-foreground">Soon...</p>
         </div>
       </div>
     </section>

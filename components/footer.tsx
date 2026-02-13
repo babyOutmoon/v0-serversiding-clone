@@ -12,7 +12,7 @@ export function Footer() {
               <path d="M12 7v10" />
             </svg>
           </div>
-          <span className="text-sm font-semibold text-foreground">moon server-side</span>
+          <span className="text-sm font-semibold text-foreground">Moon server-side</span>
         </div>
 
         <nav className="flex items-center gap-6">
