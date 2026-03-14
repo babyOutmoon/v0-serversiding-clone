@@ -62,10 +62,10 @@ export function Navbar() {
               Login
             </Link>
             <Link
-              href="#pricing"
+              href="/signup"
               className="relative inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25"
             >
-              Get Started
+              Sign Up
             </Link>
           </div>
         </nav>
@@ -112,11 +112,11 @@ export function Navbar() {
                 Login
               </Link>
               <Link
-                href="#pricing"
+                href="/signup"
                 onClick={() => setMobileOpen(false)}
                 className="rounded-lg bg-primary px-5 py-3 text-center text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90"
               >
-                Get Started
+                Sign Up
               </Link>
             </div>
           </nav>
