@@ -1,19 +1,14 @@
 import { NextResponse } from "next/server"
-
-// Admin credentials - in production, use proper database
-const ADMIN_USER = {
-  username: "MoonV2",
-  password: "Nah2828",
-  role: "admin",
-  id: "admin-001",
-}
-
-// Simple in-memory user store for demo (in production, use a database)
-const users: Map<string, { id: string; username: string; password: string; email: string; role: string }> = new Map()
+import { users, sessions, isBlacklisted } from "@/lib/store"
 
 export async function POST(request: Request) {
   try {
     const { username, password } = await request.json()
+    
+    // Get client IP
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || 
+               request.headers.get("x-real-ip") || 
+               "Unknown"
 
     if (!username || !password) {
       return NextResponse.json(
@@ -22,35 +17,51 @@ export async function POST(request: Request) {
       )
     }
 
-    // Check admin credentials
-    if (username === ADMIN_USER.username && password === ADMIN_USER.password) {
-      return NextResponse.json({
-        success: true,
-        user: {
-          id: ADMIN_USER.id,
-          username: ADMIN_USER.username,
-          role: ADMIN_USER.role,
+    // Check if user is blacklisted
+    const blacklistEntry = isBlacklisted(username)
+    if (blacklistEntry) {
+      return NextResponse.json(
+        { 
+          error: "blacklisted",
+          blacklist: {
+            reason: blacklistEntry.reason,
+            blacklistedBy: blacklistEntry.blacklistedBy,
+            blacklistedAt: blacklistEntry.blacklistedAt,
+          }
         },
-      })
+        { status: 403 }
+      )
     }
 
-    // Check registered users
+    // Find user
     const user = users.get(username.toLowerCase())
-    if (user && user.password === password) {
-      return NextResponse.json({
-        success: true,
-        user: {
-          id: user.id,
-          username: user.username,
-          role: user.role,
-        },
-      })
+    
+    if (!user || user.password !== password) {
+      return NextResponse.json(
+        { error: "Invalid username or password" },
+        { status: 401 }
+      )
     }
 
-    return NextResponse.json(
-      { error: "Invalid username or password" },
-      { status: 401 }
-    )
+    // Update user info
+    user.lastLogin = new Date().toISOString()
+    user.ip = ip
+    user.isOnline = true
+
+    // Create session
+    const sessionToken = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    sessions.set(username.toLowerCase(), sessionToken)
+
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        email: user.email,
+      },
+      sessionToken,
+    })
   } catch {
     return NextResponse.json(
       { error: "Something went wrong" },
@@ -58,6 +69,3 @@ export async function POST(request: Request) {
     )
   }
 }
-
-// Export users map for signup route
-export { users }

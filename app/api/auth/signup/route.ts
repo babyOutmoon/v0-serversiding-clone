@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server"
-
-// Simple in-memory user store (shared with login - in production use database)
-const users: Map<string, { id: string; username: string; password: string; email: string; role: string }> = new Map()
+import { users, type User } from "@/lib/store"
 
 export async function POST(request: Request) {
   try {
     const { username, email, password } = await request.json()
+    
+    // Get client IP
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || 
+               request.headers.get("x-real-ip") || 
+               "Unknown"
 
     if (!username || !email || !password) {
       return NextResponse.json(
         { error: "All fields are required" },
+        { status: 400 }
+      )
+    }
+
+    // Validate username
+    if (username.length < 3 || username.length > 20) {
+      return NextResponse.json(
+        { error: "Username must be 3-20 characters" },
         { status: 400 }
       )
     }
@@ -22,21 +33,17 @@ export async function POST(request: Request) {
       )
     }
 
-    // Check if username is reserved (admin)
-    if (username.toLowerCase() === "moonv2") {
-      return NextResponse.json(
-        { error: "This username is not available" },
-        { status: 400 }
-      )
-    }
-
     // Create user
-    const newUser = {
+    const newUser: User = {
       id: `user-${Date.now()}`,
       username,
-      password, // In production, hash the password!
+      password,
       email,
       role: "user",
+      ip,
+      createdAt: new Date().toISOString(),
+      lastLogin: new Date().toISOString(),
+      isOnline: false,
     }
 
     users.set(username.toLowerCase(), newUser)
@@ -52,5 +59,3 @@ export async function POST(request: Request) {
     )
   }
 }
-
-export { users }

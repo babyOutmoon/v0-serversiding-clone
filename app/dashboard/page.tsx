@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
@@ -22,34 +22,52 @@ import {
   Check,
   Search,
   Bell,
-  Crown
+  Crown,
+  UserX,
+  Globe,
+  Trash2,
+  Edit3,
+  Plus,
+  X,
+  AlertTriangle,
+  RefreshCw
 } from "lucide-react"
 
 type User = {
   id: string
   username: string
   role: string
+  email?: string
+  sessionToken?: string
 }
 
-type Tab = "home" | "games" | "executor" | "settings"
+type AdminUser = {
+  id: string
+  username: string
+  email: string
+  role: string
+  ip: string
+  createdAt: string
+  lastLogin: string
+  isOnline: boolean
+}
 
-const sidebarItems = [
-  { id: "home" as Tab, label: "Dashboard", icon: Home },
-  { id: "games" as Tab, label: "Games", icon: Gamepad2 },
-  { id: "executor" as Tab, label: "Executor", icon: Code2 },
-  { id: "settings" as Tab, label: "Settings", icon: Settings },
-]
+type BlacklistedUser = {
+  id: string
+  username: string
+  reason: string
+  blacklistedBy: string
+  blacklistedAt: string
+}
 
-const games = [
-  { name: "Blox Fruits", players: "1.2M", status: "online" },
-  { name: "Pet Simulator X", players: "890K", status: "online" },
-  { name: "Brookhaven", players: "650K", status: "online" },
-  { name: "Adopt Me", players: "520K", status: "online" },
-  { name: "Murder Mystery 2", players: "340K", status: "online" },
-  { name: "Jailbreak", players: "280K", status: "online" },
-  { name: "Tower of Hell", players: "210K", status: "online" },
-  { name: "Arsenal", players: "180K", status: "online" },
-]
+type Game = {
+  id: string
+  name: string
+  players: string
+  status: "online" | "offline" | "maintenance"
+}
+
+type Tab = "home" | "games" | "executor" | "settings" | "admin"
 
 const scripts = [
   { name: "Infinite Jump", category: "Movement" },
@@ -76,14 +94,100 @@ print("Hello from Moon SS!")
 game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
 `)
 
+  // Admin state
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
+  const [blacklistedUsers, setBlacklistedUsers] = useState<BlacklistedUser[]>([])
+  const [games, setGames] = useState<Game[]>([])
+  const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "games">("users")
+  const [loading, setLoading] = useState(false)
+  
+  // Modals
+  const [blacklistModal, setBlacklistModal] = useState<{ open: boolean; username: string }>({ open: false, username: "" })
+  const [blacklistReason, setBlacklistReason] = useState("")
+  const [gameModal, setGameModal] = useState<{ open: boolean; game: Game | null }>({ open: false, game: null })
+  const [newGameName, setNewGameName] = useState("")
+  const [newGamePlayers, setNewGamePlayers] = useState("")
+  const [newGameStatus, setNewGameStatus] = useState<"online" | "offline" | "maintenance">("online")
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
+
+  const isAdmin = user?.role === "admin" || user?.role === "staff"
+
+  const showToast = (message: string, type: "success" | "error") => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  const fetchAdminData = useCallback(async () => {
+    if (!user || !isAdmin) return
+    setLoading(true)
+    try {
+      const [usersRes, blacklistRes, gamesRes] = await Promise.all([
+        fetch(`/api/admin?action=users&admin=${user.username}`),
+        fetch(`/api/admin?action=blacklist&admin=${user.username}`),
+        fetch(`/api/admin?action=games&admin=${user.username}`),
+      ])
+      
+      const usersData = await usersRes.json()
+      const blacklistData = await blacklistRes.json()
+      const gamesData = await gamesRes.json()
+      
+      if (usersData.users) setAdminUsers(usersData.users)
+      if (blacklistData.blacklist) setBlacklistedUsers(blacklistData.blacklist)
+      if (gamesData.games) setGames(gamesData.games)
+    } catch (err) {
+      console.error("Failed to fetch admin data", err)
+    }
+    setLoading(false)
+  }, [user, isAdmin])
+
   useEffect(() => {
     const session = localStorage.getItem("moonss_session")
     if (!session) {
       router.push("/login")
       return
     }
-    setUser(JSON.parse(session))
+    const parsed = JSON.parse(session)
+    setUser(parsed)
   }, [router])
+
+  useEffect(() => {
+    if (user && isAdmin && activeTab === "admin") {
+      fetchAdminData()
+    }
+  }, [user, isAdmin, activeTab, fetchAdminData])
+
+  // Check session validity periodically
+  useEffect(() => {
+    if (!user) return
+    
+    const checkSession = async () => {
+      try {
+        const session = JSON.parse(localStorage.getItem("moonss_session") || "{}")
+        const res = await fetch("/api/auth/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            username: session.username,
+            sessionToken: session.sessionToken 
+          }),
+        })
+        const data = await res.json()
+        
+        if (data.blacklisted) {
+          localStorage.removeItem("moonss_session")
+          router.push("/login")
+        } else if (!data.valid) {
+          localStorage.removeItem("moonss_session")
+          router.push("/login")
+        }
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    const interval = setInterval(checkSession, 10000)
+    return () => clearInterval(interval)
+  }, [user, router])
 
   const handleLogout = () => {
     localStorage.removeItem("moonss_session")
@@ -96,6 +200,164 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
     setTimeout(() => setCopied(false), 2000)
   }
 
+  // Admin actions
+  const handleForceLogout = async (username: string) => {
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          action: "forceLogout", 
+          adminUsername: user?.username,
+          username 
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast(`${username} has been logged out`, "success")
+        fetchAdminData()
+      } else {
+        showToast(data.error || "Failed to logout user", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+  }
+
+  const handleBlacklist = async () => {
+    if (!blacklistReason.trim()) {
+      showToast("Please provide a reason", "error")
+      return
+    }
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          action: "blacklist", 
+          adminUsername: user?.username,
+          username: blacklistModal.username,
+          reason: blacklistReason
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast(`${blacklistModal.username} has been blacklisted`, "success")
+        setBlacklistModal({ open: false, username: "" })
+        setBlacklistReason("")
+        fetchAdminData()
+      } else {
+        showToast(data.error || "Failed to blacklist user", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+  }
+
+  const handleUnblacklist = async (username: string) => {
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          action: "unblacklist", 
+          adminUsername: user?.username,
+          username
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast(`${username} has been unblacklisted`, "success")
+        fetchAdminData()
+      } else {
+        showToast(data.error || "Failed to unblacklist user", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+  }
+
+  const handleSaveGame = async () => {
+    if (!newGameName.trim()) {
+      showToast("Game name is required", "error")
+      return
+    }
+    try {
+      const action = gameModal.game ? "updateGame" : "addGame"
+      const body = gameModal.game 
+        ? { 
+            action, 
+            adminUsername: user?.username,
+            gameId: gameModal.game.id,
+            updates: { name: newGameName, players: newGamePlayers, status: newGameStatus }
+          }
+        : {
+            action,
+            adminUsername: user?.username,
+            name: newGameName,
+            players: newGamePlayers || "0",
+            status: newGameStatus
+          }
+
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast(gameModal.game ? "Game updated" : "Game added", "success")
+        setGameModal({ open: false, game: null })
+        setNewGameName("")
+        setNewGamePlayers("")
+        setNewGameStatus("online")
+        fetchAdminData()
+      } else {
+        showToast(data.error || "Failed to save game", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+  }
+
+  const handleDeleteGame = async (gameId: string) => {
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          action: "deleteGame", 
+          adminUsername: user?.username,
+          gameId
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast("Game deleted", "success")
+        fetchAdminData()
+      } else {
+        showToast(data.error || "Failed to delete game", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+  }
+
+  const openEditGame = (game: Game) => {
+    setNewGameName(game.name)
+    setNewGamePlayers(game.players)
+    setNewGameStatus(game.status)
+    setGameModal({ open: true, game })
+  }
+
+  const sidebarItems = [
+    { id: "home" as Tab, label: "Dashboard", icon: Home },
+    { id: "games" as Tab, label: "Games", icon: Gamepad2 },
+    { id: "executor" as Tab, label: "Executor", icon: Code2 },
+    { id: "settings" as Tab, label: "Settings", icon: Settings },
+    ...(isAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield }] : []),
+  ]
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -106,6 +368,142 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
 
   return (
     <div className="min-h-screen flex">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg animate-in slide-in-from-top ${
+          toast.type === "success" ? "bg-green-500/90 text-white" : "bg-destructive/90 text-white"
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
+      {/* Blacklist Modal */}
+      {blacklistModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-md glass-strong rounded-2xl border border-border/50 p-6">
+            <button
+              onClick={() => { setBlacklistModal({ open: false, username: "" }); setBlacklistReason(""); }}
+              className="absolute top-4 right-4 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-10 w-10 rounded-lg bg-destructive/20 flex items-center justify-center">
+                <UserX className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <h2 className="font-bold text-foreground">Blacklist User</h2>
+                <p className="text-sm text-muted-foreground">{blacklistModal.username}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-foreground">Reason</label>
+                <textarea
+                  value={blacklistReason}
+                  onChange={(e) => setBlacklistReason(e.target.value)}
+                  className="w-full mt-2 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                  placeholder="Enter the reason for blacklisting..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setBlacklistModal({ open: false, username: "" }); setBlacklistReason(""); }}
+                  className="flex-1 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBlacklist}
+                  className="flex-1 rounded-lg bg-destructive px-4 py-2.5 text-sm font-medium text-white hover:bg-destructive/90 transition-all"
+                >
+                  Blacklist
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Game Modal */}
+      {gameModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-md glass-strong rounded-2xl border border-border/50 p-6">
+            <button
+              onClick={() => { setGameModal({ open: false, game: null }); setNewGameName(""); setNewGamePlayers(""); setNewGameStatus("online"); }}
+              className="absolute top-4 right-4 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                <Gamepad2 className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="font-bold text-foreground">{gameModal.game ? "Edit Game" : "Add Game"}</h2>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-foreground">Game Name</label>
+                <input
+                  type="text"
+                  value={newGameName}
+                  onChange={(e) => setNewGameName(e.target.value)}
+                  className="w-full mt-2 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="Enter game name..."
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-foreground">Players</label>
+                <input
+                  type="text"
+                  value={newGamePlayers}
+                  onChange={(e) => setNewGamePlayers(e.target.value)}
+                  className="w-full mt-2 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="e.g. 1.2M"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-foreground">Status</label>
+                <select
+                  value={newGameStatus}
+                  onChange={(e) => setNewGameStatus(e.target.value as "online" | "offline" | "maintenance")}
+                  className="w-full mt-2 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="online">Online</option>
+                  <option value="offline">Offline</option>
+                  <option value="maintenance">Maintenance</option>
+                </select>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setGameModal({ open: false, game: null }); setNewGameName(""); setNewGamePlayers(""); setNewGameStatus("online"); }}
+                  className="flex-1 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveGame}
+                  className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
+                >
+                  {gameModal.game ? "Save Changes" : "Add Game"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside className="w-64 glass-strong border-r border-border/30 flex flex-col">
         {/* Logo */}
@@ -247,7 +645,7 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                     className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="p-3 rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-all">
+                      <div className="p-3 rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-white transition-all">
                         <Gamepad2 className="h-6 w-6" />
                       </div>
                       <div>
@@ -302,17 +700,23 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {games.map((game, i) => (
+                {games.map((game) => (
                   <div
-                    key={i}
+                    key={game.id}
                     className="glass rounded-xl p-5 border border-border/30 hover:border-primary/50 transition-all cursor-pointer group"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
                         <Gamepad2 className="h-6 w-6 text-primary" />
                       </div>
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-green-500">
-                        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                      <span className={`flex items-center gap-1.5 text-xs font-medium ${
+                        game.status === "online" ? "text-green-500" : 
+                        game.status === "maintenance" ? "text-yellow-500" : "text-red-500"
+                      }`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${
+                          game.status === "online" ? "bg-green-500" : 
+                          game.status === "maintenance" ? "bg-yellow-500" : "bg-red-500"
+                        }`} />
                         {game.status}
                       </span>
                     </div>
@@ -427,6 +831,205 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === "admin" && isAdmin && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">Admin Panel</h2>
+                  <p className="text-muted-foreground mt-1">Manage users, games, and blacklist</p>
+                </div>
+                <button
+                  onClick={fetchAdminData}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                  Refresh
+                </button>
+              </div>
+
+              {/* Admin Tabs */}
+              <div className="flex gap-2 border-b border-border/30 pb-4">
+                {[
+                  { id: "users" as const, label: "Users", icon: Users },
+                  { id: "blacklist" as const, label: "Blacklist", icon: UserX },
+                  { id: "games" as const, label: "Games", icon: Gamepad2 },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setAdminTab(tab.id)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      adminTab === tab.id
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    }`}
+                  >
+                    <tab.icon className="h-4 w-4" />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Users Tab */}
+              {adminTab === "users" && (
+                <div className="glass rounded-xl border border-border/30 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
+                    <span className="text-sm font-medium text-foreground">Registered Users ({adminUsers.length})</span>
+                  </div>
+                  <div className="divide-y divide-border/30">
+                    {adminUsers.map((u) => (
+                      <div key={u.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
+                        <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
+                          {u.role === "admin" ? (
+                            <Crown className="h-5 w-5 text-primary" />
+                          ) : (
+                            <span className="text-sm font-bold text-primary">
+                              {u.username.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-foreground">{u.username}</p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              u.role === "admin" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                            }`}>
+                              {u.role}
+                            </span>
+                            {u.isOnline && (
+                              <span className="flex items-center gap-1 text-xs text-green-500">
+                                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                Online
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">{u.email}</p>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Globe className="h-4 w-4" />
+                          <span className="font-mono">{u.ip}</span>
+                        </div>
+                        {u.role !== "admin" && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleForceLogout(u.username)}
+                              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                              title="Force Logout"
+                            >
+                              <LogOut className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => setBlacklistModal({ open: true, username: u.username })}
+                              className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                              title="Blacklist"
+                            >
+                              <UserX className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {adminUsers.length === 0 && (
+                      <div className="p-8 text-center text-muted-foreground">
+                        No users found
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Blacklist Tab */}
+              {adminTab === "blacklist" && (
+                <div className="glass rounded-xl border border-border/30 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
+                    <span className="text-sm font-medium text-foreground">Blacklisted Users ({blacklistedUsers.length})</span>
+                  </div>
+                  <div className="divide-y divide-border/30">
+                    {blacklistedUsers.map((u) => (
+                      <div key={u.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
+                        <div className="h-10 w-10 rounded-full bg-destructive/20 flex items-center justify-center">
+                          <AlertTriangle className="h-5 w-5 text-destructive" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground">{u.username}</p>
+                          <p className="text-sm text-muted-foreground">Reason: {u.reason}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            By {u.blacklistedBy} on {new Date(u.blacklistedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleUnblacklist(u.username)}
+                          className="inline-flex items-center gap-2 rounded-lg border border-green-500/50 bg-green-500/10 px-3 py-1.5 text-sm font-medium text-green-500 hover:bg-green-500/20 transition-all"
+                        >
+                          Unblacklist
+                        </button>
+                      </div>
+                    ))}
+                    {blacklistedUsers.length === 0 && (
+                      <div className="p-8 text-center text-muted-foreground">
+                        No blacklisted users
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Games Tab */}
+              {adminTab === "games" && (
+                <div className="space-y-4">
+                  <button
+                    onClick={() => setGameModal({ open: true, game: null })}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Game
+                  </button>
+
+                  <div className="glass rounded-xl border border-border/30 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
+                      <span className="text-sm font-medium text-foreground">Games ({games.length})</span>
+                    </div>
+                    <div className="divide-y divide-border/30">
+                      {games.map((game) => (
+                        <div key={game.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
+                          <div className="h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                            <Gamepad2 className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-foreground">{game.name}</p>
+                            <p className="text-sm text-muted-foreground">{game.players} players</p>
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            game.status === "online" ? "bg-green-500/20 text-green-500" : 
+                            game.status === "maintenance" ? "bg-yellow-500/20 text-yellow-500" : "bg-red-500/20 text-red-500"
+                          }`}>
+                            {game.status}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => openEditGame(game)}
+                              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                              title="Edit"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGame(game.id)}
+                              className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
