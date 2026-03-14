@@ -10,18 +10,22 @@ import {
   updateGame,
   addGame,
   deleteGame,
+  createStaffAccount,
+  getStaffAccounts,
+  deleteStaffAccount,
   type Game
 } from "@/lib/store"
 
-// Verify admin/staff
+// Check if user is owner or staff
 function isAuthorized(username: string): boolean {
   const user = users.get(username.toLowerCase())
-  return user?.role === "admin" || user?.role === "staff"
+  return user?.role === "owner" || user?.role === "staff"
 }
 
-function isAdmin(username: string): boolean {
+// Check if user is owner only
+function isOwner(username: string): boolean {
   const user = users.get(username.toLowerCase())
-  return user?.role === "admin"
+  return user?.role === "owner"
 }
 
 export async function GET(request: Request) {
@@ -52,6 +56,18 @@ export async function GET(request: Request) {
 
     case "games":
       return NextResponse.json({ games: getAllGames() })
+
+    case "staff":
+      if (!isOwner(adminUsername)) {
+        return NextResponse.json({ error: "Owner only" }, { status: 403 })
+      }
+      return NextResponse.json({ staff: getStaffAccounts().map(s => ({
+        id: s.id,
+        username: s.username,
+        email: s.email,
+        createdAt: s.createdAt,
+        isOnline: s.isOnline,
+      })) })
 
     default:
       return NextResponse.json({ error: "Invalid action" }, { status: 400 })
@@ -105,8 +121,9 @@ export async function POST(request: Request) {
       }
 
       case "updateGame": {
-        if (!isAdmin(adminUsername)) {
-          return NextResponse.json({ error: "Admin only" }, { status: 403 })
+        // Only owner can modify games
+        if (!isOwner(adminUsername)) {
+          return NextResponse.json({ error: "Owner only" }, { status: 403 })
         }
         const { gameId, updates } = data
         if (!gameId) {
@@ -120,20 +137,29 @@ export async function POST(request: Request) {
       }
 
       case "addGame": {
-        if (!isAdmin(adminUsername)) {
-          return NextResponse.json({ error: "Admin only" }, { status: 403 })
+        // Only owner can add games
+        if (!isOwner(adminUsername)) {
+          return NextResponse.json({ error: "Owner only" }, { status: 403 })
         }
-        const { name, players, status } = data
+        const { name, players, status, imageUrl, gameUrl, placeId } = data
         if (!name) {
           return NextResponse.json({ error: "Game name required" }, { status: 400 })
         }
-        const newGame = addGame({ name, players: players || "0", status: status || "online" })
+        const newGame = addGame({ 
+          name, 
+          players: players || 0, 
+          status: status || "online",
+          imageUrl: imageUrl || "",
+          gameUrl: gameUrl || "",
+          placeId: placeId || ""
+        })
         return NextResponse.json({ success: true, game: newGame })
       }
 
       case "deleteGame": {
-        if (!isAdmin(adminUsername)) {
-          return NextResponse.json({ error: "Admin only" }, { status: 403 })
+        // Only owner can delete games
+        if (!isOwner(adminUsername)) {
+          return NextResponse.json({ error: "Owner only" }, { status: 403 })
         }
         const { gameId } = data
         if (!gameId) {
@@ -144,6 +170,38 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "Game not found" }, { status: 404 })
         }
         return NextResponse.json({ success: true, message: "Game deleted" })
+      }
+
+      case "createStaff": {
+        // Only owner can create staff
+        if (!isOwner(adminUsername)) {
+          return NextResponse.json({ error: "Owner only" }, { status: 403 })
+        }
+        const { username, password, email } = data
+        if (!username || !password || !email) {
+          return NextResponse.json({ error: "Username, password and email required" }, { status: 400 })
+        }
+        const newStaff = createStaffAccount(username, password, email)
+        if (!newStaff) {
+          return NextResponse.json({ error: "Username already exists" }, { status: 400 })
+        }
+        return NextResponse.json({ success: true, staff: { username: newStaff.username, email: newStaff.email } })
+      }
+
+      case "deleteStaff": {
+        // Only owner can delete staff
+        if (!isOwner(adminUsername)) {
+          return NextResponse.json({ error: "Owner only" }, { status: 403 })
+        }
+        const { username } = data
+        if (!username) {
+          return NextResponse.json({ error: "Username required" }, { status: 400 })
+        }
+        const success = deleteStaffAccount(username)
+        if (!success) {
+          return NextResponse.json({ error: "Staff not found" }, { status: 400 })
+        }
+        return NextResponse.json({ success: true, message: "Staff deleted" })
       }
 
       default:

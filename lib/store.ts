@@ -6,7 +6,7 @@ export type User = {
   username: string
   password: string
   email: string
-  role: "admin" | "staff" | "user"
+  role: "owner" | "staff" | "user"
   ip: string
   createdAt: string
   lastLogin: string
@@ -24,18 +24,20 @@ export type BlacklistedUser = {
 export type Game = {
   id: string
   name: string
-  players: string
+  players: number
   status: "online" | "offline" | "maintenance"
-  imageUrl?: string
+  imageUrl: string
+  gameUrl: string
+  placeId: string
 }
 
-// Admin account (pre-created)
-const ADMIN: User = {
-  id: "admin-001",
+// Owner account (pre-created) - YOU
+const OWNER: User = {
+  id: "owner-001",
   username: "MoonV2",
   password: "Nah2828",
-  email: "admin@moonss.xyz",
-  role: "admin",
+  email: "owner@moonss.xyz",
+  role: "owner",
   ip: "127.0.0.1",
   createdAt: new Date().toISOString(),
   lastLogin: new Date().toISOString(),
@@ -44,7 +46,7 @@ const ADMIN: User = {
 
 // Users store
 export const users = new Map<string, User>([
-  [ADMIN.username.toLowerCase(), ADMIN],
+  [OWNER.username.toLowerCase(), OWNER],
 ])
 
 // Blacklist store
@@ -55,14 +57,12 @@ export const sessions = new Map<string, string>()
 
 // Games store
 export const games = new Map<string, Game>([
-  ["1", { id: "1", name: "Blox Fruits", players: "1.2M", status: "online" }],
-  ["2", { id: "2", name: "Pet Simulator X", players: "890K", status: "online" }],
-  ["3", { id: "3", name: "Brookhaven", players: "650K", status: "online" }],
-  ["4", { id: "4", name: "Adopt Me", players: "520K", status: "online" }],
-  ["5", { id: "5", name: "Murder Mystery 2", players: "340K", status: "online" }],
-  ["6", { id: "6", name: "Jailbreak", players: "280K", status: "online" }],
-  ["7", { id: "7", name: "Tower of Hell", players: "210K", status: "online" }],
-  ["8", { id: "8", name: "Arsenal", players: "180K", status: "online" }],
+  ["1", { id: "1", name: "Blox Fruits", players: 1200000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/2753915549", placeId: "2753915549" }],
+  ["2", { id: "2", name: "Pet Simulator X", players: 890000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/6284583030", placeId: "6284583030" }],
+  ["3", { id: "3", name: "Brookhaven", players: 650000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/4924922222", placeId: "4924922222" }],
+  ["4", { id: "4", name: "Adopt Me", players: 520000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/920587237", placeId: "920587237" }],
+  ["5", { id: "5", name: "Murder Mystery 2", players: 340000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/142823291", placeId: "142823291" }],
+  ["6", { id: "6", name: "Jailbreak", players: 280000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/606849621", placeId: "606849621" }],
 ])
 
 // Helper functions
@@ -88,7 +88,7 @@ export function getAllGames(): Game[] {
 
 export function blacklistUser(username: string, reason: string, blacklistedBy: string): boolean {
   const user = users.get(username.toLowerCase())
-  if (!user || user.role === "admin") return false
+  if (!user || user.role === "owner") return false
   
   blacklist.set(username.toLowerCase(), {
     id: user.id,
@@ -111,7 +111,7 @@ export function unblacklistUser(username: string): boolean {
 
 export function forceLogout(username: string): boolean {
   const user = users.get(username.toLowerCase())
-  if (!user || user.role === "admin") return false
+  if (!user || user.role === "owner") return false
   
   sessions.delete(username.toLowerCase())
   user.isOnline = false
@@ -127,7 +127,7 @@ export function updateGame(id: string, updates: Partial<Game>): boolean {
 }
 
 export function addGame(game: Omit<Game, "id">): Game {
-  const id = String(games.size + 1)
+  const id = String(Date.now())
   const newGame = { ...game, id }
   games.set(id, newGame)
   return newGame
@@ -135,4 +135,48 @@ export function addGame(game: Omit<Game, "id">): Game {
 
 export function deleteGame(id: string): boolean {
   return games.delete(id)
+}
+
+export function createStaffAccount(username: string, password: string, email: string): User | null {
+  if (users.has(username.toLowerCase())) return null
+  
+  const newStaff: User = {
+    id: `staff-${Date.now()}`,
+    username,
+    password,
+    email,
+    role: "staff",
+    ip: "0.0.0.0",
+    createdAt: new Date().toISOString(),
+    lastLogin: new Date().toISOString(),
+    isOnline: false,
+  }
+  
+  users.set(username.toLowerCase(), newStaff)
+  return newStaff
+}
+
+export function getStaffAccounts(): User[] {
+  return Array.from(users.values()).filter(u => u.role === "staff")
+}
+
+export function deleteStaffAccount(username: string): boolean {
+  const user = users.get(username.toLowerCase())
+  if (!user || user.role !== "staff") return false
+  users.delete(username.toLowerCase())
+  sessions.delete(username.toLowerCase())
+  return true
+}
+
+// Format player count
+export function formatPlayers(count: number): string {
+  if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`
+  if (count >= 1000) return `${(count / 1000).toFixed(0)}K`
+  return String(count)
+}
+
+// Extract place ID from Roblox URL
+export function extractPlaceId(url: string): string | null {
+  const match = url.match(/roblox\.com\/games\/(\d+)/)
+  return match ? match[1] : null
 }

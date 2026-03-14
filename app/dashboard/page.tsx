@@ -7,19 +7,14 @@ import Link from "next/link"
 import { 
   Home, 
   Gamepad2, 
-  Code2, 
   Settings, 
   LogOut, 
   ChevronRight,
-  Play,
   Users,
   Zap,
   Clock,
   Shield,
-  Sparkles,
   ExternalLink,
-  Copy,
-  Check,
   Search,
   Bell,
   Crown,
@@ -29,8 +24,13 @@ import {
   Edit3,
   Plus,
   X,
-  AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  UserPlus,
+  Link2,
+  Play,
+  Eye,
+  Copy,
+  Check
 } from "lucide-react"
 
 type User = {
@@ -63,82 +63,128 @@ type BlacklistedUser = {
 type Game = {
   id: string
   name: string
-  players: string
+  players: number
   status: "online" | "offline" | "maintenance"
+  imageUrl: string
+  gameUrl: string
+  placeId: string
 }
 
-type Tab = "home" | "games" | "executor" | "settings" | "admin"
+type StaffAccount = {
+  id: string
+  username: string
+  email: string
+  createdAt: string
+  isOnline: boolean
+}
 
-const scripts = [
-  { name: "Infinite Jump", category: "Movement" },
-  { name: "Speed Hack", category: "Movement" },
-  { name: "ESP / Wallhack", category: "Visual" },
-  { name: "Aimbot", category: "Combat" },
-  { name: "Auto Farm", category: "Automation" },
-  { name: "Fly Script", category: "Movement" },
-  { name: "Noclip", category: "Movement" },
-  { name: "Teleport", category: "Movement" },
-]
+type Tab = "home" | "games" | "settings" | "admin"
 
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>("home")
-  const [copied, setCopied] = useState(false)
-  const [scriptCode, setScriptCode] = useState(`-- Moon Server-Side Script
--- Paste your script here
-
-print("Hello from Moon SS!")
-
--- Example: Basic speed script
-game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
-`)
+  const [copied, setCopied] = useState<string | null>(null)
 
   // Admin state
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
   const [blacklistedUsers, setBlacklistedUsers] = useState<BlacklistedUser[]>([])
   const [games, setGames] = useState<Game[]>([])
-  const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "games">("users")
+  const [staffAccounts, setStaffAccounts] = useState<StaffAccount[]>([])
+  const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "games" | "staff">("users")
   const [loading, setLoading] = useState(false)
   
   // Modals
   const [blacklistModal, setBlacklistModal] = useState<{ open: boolean; username: string }>({ open: false, username: "" })
   const [blacklistReason, setBlacklistReason] = useState("")
   const [gameModal, setGameModal] = useState<{ open: boolean; game: Game | null }>({ open: false, game: null })
-  const [newGameName, setNewGameName] = useState("")
-  const [newGamePlayers, setNewGamePlayers] = useState("")
+  const [staffModal, setStaffModal] = useState(false)
+  const [newGameUrl, setNewGameUrl] = useState("")
   const [newGameStatus, setNewGameStatus] = useState<"online" | "offline" | "maintenance">("online")
+  const [fetchingGame, setFetchingGame] = useState(false)
+  const [fetchedGameData, setFetchedGameData] = useState<{ name: string; players: number; thumbnail: string; placeId: string } | null>(null)
+  const [newStaffUsername, setNewStaffUsername] = useState("")
+  const [newStaffPassword, setNewStaffPassword] = useState("")
+  const [newStaffEmail, setNewStaffEmail] = useState("")
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
 
-  const isAdmin = user?.role === "admin" || user?.role === "staff"
+  const isOwner = user?.role === "owner"
+  const isStaff = user?.role === "staff"
+  const isAdmin = isOwner || isStaff
 
   const showToast = (message: string, type: "success" | "error") => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
   }
 
+  const formatPlayers = (count: number): string => {
+    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`
+    if (count >= 1000) return `${(count / 1000).toFixed(0)}K`
+    return String(count)
+  }
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(id)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
   const fetchAdminData = useCallback(async () => {
     if (!user || !isAdmin) return
     setLoading(true)
     try {
-      const [usersRes, blacklistRes, gamesRes] = await Promise.all([
+      const requests = [
         fetch(`/api/admin?action=users&admin=${user.username}`),
         fetch(`/api/admin?action=blacklist&admin=${user.username}`),
         fetch(`/api/admin?action=games&admin=${user.username}`),
-      ])
+      ]
       
-      const usersData = await usersRes.json()
-      const blacklistData = await blacklistRes.json()
-      const gamesData = await gamesRes.json()
+      // Only owner can fetch staff list
+      if (isOwner) {
+        requests.push(fetch(`/api/admin?action=staff&admin=${user.username}`))
+      }
+      
+      const responses = await Promise.all(requests)
+      const [usersData, blacklistData, gamesData, staffData] = await Promise.all(
+        responses.map(r => r.json())
+      )
       
       if (usersData.users) setAdminUsers(usersData.users)
       if (blacklistData.blacklist) setBlacklistedUsers(blacklistData.blacklist)
       if (gamesData.games) setGames(gamesData.games)
+      if (staffData?.staff) setStaffAccounts(staffData.staff)
     } catch (err) {
       console.error("Failed to fetch admin data", err)
     }
     setLoading(false)
-  }, [user, isAdmin])
+  }, [user, isAdmin, isOwner])
+
+  // Refresh game data periodically for real-time player counts
+  const refreshGameData = useCallback(async () => {
+    if (games.length === 0) return
+    
+    const updatedGames = await Promise.all(
+      games.map(async (game) => {
+        if (!game.placeId) return game
+        try {
+          const res = await fetch(`/api/roblox?placeId=${game.placeId}`)
+          const data = await res.json()
+          if (data.success) {
+            return {
+              ...game,
+              players: data.players,
+              name: data.name || game.name,
+              imageUrl: data.thumbnail || game.imageUrl
+            }
+          }
+        } catch {
+          // Ignore errors
+        }
+        return game
+      })
+    )
+    setGames(updatedGames)
+  }, [games])
 
   useEffect(() => {
     const session = localStorage.getItem("moonss_session")
@@ -155,6 +201,14 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
       fetchAdminData()
     }
   }, [user, isAdmin, activeTab, fetchAdminData])
+
+  // Refresh games every 30 seconds when on games tab
+  useEffect(() => {
+    if (activeTab === "games" && games.length > 0) {
+      const interval = setInterval(refreshGameData, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [activeTab, games.length, refreshGameData])
 
   // Check session validity periodically
   useEffect(() => {
@@ -173,10 +227,7 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
         })
         const data = await res.json()
         
-        if (data.blacklisted) {
-          localStorage.removeItem("moonss_session")
-          router.push("/login")
-        } else if (!data.valid) {
+        if (data.blacklisted || !data.valid) {
           localStorage.removeItem("moonss_session")
           router.push("/login")
         }
@@ -192,12 +243,6 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
   const handleLogout = () => {
     localStorage.removeItem("moonss_session")
     router.push("/")
-  }
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
   }
 
   // Admin actions
@@ -277,11 +322,44 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
     }
   }
 
-  const handleSaveGame = async () => {
-    if (!newGameName.trim()) {
-      showToast("Game name is required", "error")
+  // Fetch game info from Roblox URL
+  const fetchGameFromUrl = async () => {
+    const match = newGameUrl.match(/roblox\.com\/games\/(\d+)/)
+    if (!match) {
+      showToast("Invalid Roblox game URL", "error")
       return
     }
+    
+    const placeId = match[1]
+    setFetchingGame(true)
+    
+    try {
+      const res = await fetch(`/api/roblox?placeId=${placeId}`)
+      const data = await res.json()
+      
+      if (data.success || data.name) {
+        setFetchedGameData({
+          name: data.name || "Unknown Game",
+          players: data.players || 0,
+          thumbnail: data.thumbnail || "",
+          placeId
+        })
+      } else {
+        showToast("Could not fetch game info", "error")
+      }
+    } catch {
+      showToast("Failed to fetch game info", "error")
+    }
+    
+    setFetchingGame(false)
+  }
+
+  const handleSaveGame = async () => {
+    if (!fetchedGameData && !gameModal.game) {
+      showToast("Please fetch game info first", "error")
+      return
+    }
+    
     try {
       const action = gameModal.game ? "updateGame" : "addGame"
       const body = gameModal.game 
@@ -289,14 +367,24 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
             action, 
             adminUsername: user?.username,
             gameId: gameModal.game.id,
-            updates: { name: newGameName, players: newGamePlayers, status: newGameStatus }
+            updates: { 
+              name: fetchedGameData?.name || gameModal.game.name,
+              players: fetchedGameData?.players || gameModal.game.players,
+              status: newGameStatus,
+              imageUrl: fetchedGameData?.thumbnail || gameModal.game.imageUrl,
+              gameUrl: newGameUrl || gameModal.game.gameUrl,
+              placeId: fetchedGameData?.placeId || gameModal.game.placeId
+            }
           }
         : {
             action,
             adminUsername: user?.username,
-            name: newGameName,
-            players: newGamePlayers || "0",
-            status: newGameStatus
+            name: fetchedGameData?.name,
+            players: fetchedGameData?.players || 0,
+            status: newGameStatus,
+            imageUrl: fetchedGameData?.thumbnail || "",
+            gameUrl: newGameUrl,
+            placeId: fetchedGameData?.placeId
           }
 
       const res = await fetch("/api/admin", {
@@ -307,10 +395,7 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
       const data = await res.json()
       if (data.success) {
         showToast(gameModal.game ? "Game updated" : "Game added", "success")
-        setGameModal({ open: false, game: null })
-        setNewGameName("")
-        setNewGamePlayers("")
-        setNewGameStatus("online")
+        closeGameModal()
         fetchAdminData()
       } else {
         showToast(data.error || "Failed to save game", "error")
@@ -344,30 +429,99 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
   }
 
   const openEditGame = (game: Game) => {
-    setNewGameName(game.name)
-    setNewGamePlayers(game.players)
+    setNewGameUrl(game.gameUrl)
     setNewGameStatus(game.status)
+    setFetchedGameData({
+      name: game.name,
+      players: game.players,
+      thumbnail: game.imageUrl,
+      placeId: game.placeId
+    })
     setGameModal({ open: true, game })
   }
 
+  const closeGameModal = () => {
+    setGameModal({ open: false, game: null })
+    setNewGameUrl("")
+    setNewGameStatus("online")
+    setFetchedGameData(null)
+  }
+
+  // Staff management
+  const handleCreateStaff = async () => {
+    if (!newStaffUsername || !newStaffPassword || !newStaffEmail) {
+      showToast("All fields are required", "error")
+      return
+    }
+    
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          action: "createStaff", 
+          adminUsername: user?.username,
+          username: newStaffUsername,
+          password: newStaffPassword,
+          email: newStaffEmail
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast(`Staff account "${newStaffUsername}" created`, "success")
+        setStaffModal(false)
+        setNewStaffUsername("")
+        setNewStaffPassword("")
+        setNewStaffEmail("")
+        fetchAdminData()
+      } else {
+        showToast(data.error || "Failed to create staff", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+  }
+
+  const handleDeleteStaff = async (username: string) => {
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          action: "deleteStaff", 
+          adminUsername: user?.username,
+          username
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast(`Staff "${username}" deleted`, "success")
+        fetchAdminData()
+      } else {
+        showToast(data.error || "Failed to delete staff", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+  }
+
   const sidebarItems = [
-    { id: "home" as Tab, label: "Dashboard", icon: Home },
+    { id: "home" as Tab, label: "Home", icon: Home },
     { id: "games" as Tab, label: "Games", icon: Gamepad2 },
-    { id: "executor" as Tab, label: "Executor", icon: Code2 },
     { id: "settings" as Tab, label: "Settings", icon: Settings },
     ...(isAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield }] : []),
   ]
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex bg-background">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg animate-in slide-in-from-top ${
@@ -429,12 +583,12 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
         </div>
       )}
 
-      {/* Game Modal */}
-      {gameModal.open && (
+      {/* Game Modal - Owner Only */}
+      {gameModal.open && isOwner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-md glass-strong rounded-2xl border border-border/50 p-6">
+          <div className="relative w-full max-w-lg glass-strong rounded-2xl border border-border/50 p-6">
             <button
-              onClick={() => { setGameModal({ open: false, game: null }); setNewGameName(""); setNewGamePlayers(""); setNewGameStatus("online"); }}
+              onClick={closeGameModal}
               className="absolute top-4 right-4 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
             >
               <X className="h-5 w-5" />
@@ -446,31 +600,55 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
               </div>
               <div>
                 <h2 className="font-bold text-foreground">{gameModal.game ? "Edit Game" : "Add Game"}</h2>
+                <p className="text-sm text-muted-foreground">Paste a Roblox game URL</p>
               </div>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-foreground">Game Name</label>
-                <input
-                  type="text"
-                  value={newGameName}
-                  onChange={(e) => setNewGameName(e.target.value)}
-                  className="w-full mt-2 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="Enter game name..."
-                />
+                <label className="text-sm font-medium text-foreground">Roblox Game URL</label>
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={newGameUrl}
+                    onChange={(e) => setNewGameUrl(e.target.value)}
+                    className="flex-1 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    placeholder="https://www.roblox.com/games/123456789"
+                  />
+                  <button
+                    onClick={fetchGameFromUrl}
+                    disabled={fetchingGame || !newGameUrl}
+                    className="rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50"
+                  >
+                    {fetchingGame ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <label className="text-sm font-medium text-foreground">Players</label>
-                <input
-                  type="text"
-                  value={newGamePlayers}
-                  onChange={(e) => setNewGamePlayers(e.target.value)}
-                  className="w-full mt-2 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="e.g. 1.2M"
-                />
-              </div>
+              {fetchedGameData && (
+                <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                  <div className="flex items-center gap-4">
+                    {fetchedGameData.thumbnail ? (
+                      <img
+                        src={fetchedGameData.thumbnail}
+                        alt={fetchedGameData.name}
+                        className="h-16 w-16 rounded-lg object-cover"
+                      />
+                    ) : (
+                      <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center">
+                        <Gamepad2 className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div>
+                      <p className="font-semibold text-foreground">{fetchedGameData.name}</p>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1">
+                        <Users className="h-3 w-3" />
+                        {formatPlayers(fetchedGameData.players)} playing
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="text-sm font-medium text-foreground">Status</label>
@@ -487,16 +665,95 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => { setGameModal({ open: false, game: null }); setNewGameName(""); setNewGamePlayers(""); setNewGameStatus("online"); }}
+                  onClick={closeGameModal}
                   className="flex-1 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveGame}
-                  className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
+                  disabled={!fetchedGameData && !gameModal.game}
+                  className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50"
                 >
                   {gameModal.game ? "Save Changes" : "Add Game"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Staff Modal - Owner Only */}
+      {staffModal && isOwner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-md glass-strong rounded-2xl border border-border/50 p-6">
+            <button
+              onClick={() => { setStaffModal(false); setNewStaffUsername(""); setNewStaffPassword(""); setNewStaffEmail(""); }}
+              className="absolute top-4 right-4 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                <UserPlus className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="font-bold text-foreground">Create Staff Account</h2>
+                <p className="text-sm text-muted-foreground">Limited admin access</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-foreground">Username</label>
+                <input
+                  type="text"
+                  value={newStaffUsername}
+                  onChange={(e) => setNewStaffUsername(e.target.value)}
+                  className="w-full mt-2 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="Staff username"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-foreground">Email</label>
+                <input
+                  type="email"
+                  value={newStaffEmail}
+                  onChange={(e) => setNewStaffEmail(e.target.value)}
+                  className="w-full mt-2 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="staff@example.com"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-foreground">Password</label>
+                <input
+                  type="text"
+                  value={newStaffPassword}
+                  onChange={(e) => setNewStaffPassword(e.target.value)}
+                  className="w-full mt-2 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="Password"
+                />
+              </div>
+
+              <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+                <p className="text-xs text-yellow-500">Staff accounts can view users, blacklist users, and force logout - but cannot modify games.</p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setStaffModal(false); setNewStaffUsername(""); setNewStaffPassword(""); setNewStaffEmail(""); }}
+                  className="flex-1 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateStaff}
+                  className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
+                >
+                  Create Staff
                 </button>
               </div>
             </div>
@@ -546,8 +803,10 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
         <div className="p-4 border-t border-border/30">
           <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-secondary/50">
             <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
-              {user.role === "admin" ? (
+              {isOwner ? (
                 <Crown className="h-5 w-5 text-primary" />
+              ) : isStaff ? (
+                <Shield className="h-5 w-5 text-accent" />
               ) : (
                 <span className="text-sm font-bold text-primary">
                   {user.username.charAt(0).toUpperCase()}
@@ -593,19 +852,20 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
+          {/* Home Tab */}
           {activeTab === "home" && (
             <div className="space-y-6">
               <div>
                 <h2 className="text-2xl font-bold text-foreground">Welcome back, {user.username}!</h2>
-                <p className="text-muted-foreground mt-1">{"Here's what's happening with your account."}</p>
+                <p className="text-muted-foreground mt-1">{"Here's what's happening with Moon Server-Side."}</p>
               </div>
 
               {/* Stats */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                  { label: "Games Available", value: "100+", icon: Gamepad2, color: "text-primary" },
-                  { label: "Active Users", value: "2.5K+", icon: Users, color: "text-green-500" },
-                  { label: "Scripts Executed", value: "50K+", icon: Zap, color: "text-yellow-500" },
+                  { label: "Games Available", value: `${games.length}+`, icon: Gamepad2, color: "text-primary" },
+                  { label: "Total Players", value: formatPlayers(games.reduce((acc, g) => acc + g.players, 0)), icon: Users, color: "text-green-500" },
+                  { label: "Active Users", value: `${adminUsers.filter(u => u.isOnline).length}`, icon: Zap, color: "text-yellow-500" },
                   { label: "Uptime", value: "99.9%", icon: Clock, color: "text-accent" },
                 ].map((stat, i) => (
                   <div key={i} className="glass rounded-xl p-5 border border-border/30">
@@ -627,33 +887,35 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                 <h3 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <button
-                    onClick={() => setActiveTab("executor")}
-                    className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
-                        <Play className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-foreground">Execute Script</p>
-                        <p className="text-sm text-muted-foreground">Run your scripts</p>
-                      </div>
-                    </div>
-                  </button>
-                  <button
                     onClick={() => setActiveTab("games")}
                     className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="p-3 rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-white transition-all">
+                      <div className="p-3 rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
                         <Gamepad2 className="h-6 w-6" />
                       </div>
                       <div>
                         <p className="font-semibold text-foreground">Browse Games</p>
-                        <p className="text-sm text-muted-foreground">100+ supported games</p>
+                        <p className="text-sm text-muted-foreground">{games.length}+ supported</p>
                       </div>
                     </div>
                   </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setActiveTab("admin")}
+                      className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-white transition-all">
+                          <Shield className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground">Admin Panel</p>
+                          <p className="text-sm text-muted-foreground">Manage users & games</p>
+                        </div>
+                      </div>
+                    </button>
+                  )}
                   <a
                     href="https://discord.gg/YRF26H8bMA"
                     target="_blank"
@@ -692,109 +954,79 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
             </div>
           )}
 
+          {/* Games Tab */}
           {activeTab === "games" && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-bold text-foreground">Supported Games</h2>
-                <p className="text-muted-foreground mt-1">Browse all games that support Moon Server-Side</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">Supported Games</h2>
+                  <p className="text-muted-foreground mt-1">Browse all games - player counts update in real-time</p>
+                </div>
+                <button
+                  onClick={refreshGameData}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {games.map((game) => (
                   <div
                     key={game.id}
-                    className="glass rounded-xl p-5 border border-border/30 hover:border-primary/50 transition-all cursor-pointer group"
+                    className="glass rounded-xl border border-border/30 hover:border-primary/50 transition-all overflow-hidden group"
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                        <Gamepad2 className="h-6 w-6 text-primary" />
+                    <div className="aspect-video bg-gradient-to-br from-primary/20 to-accent/20 relative">
+                      {game.imageUrl ? (
+                        <img
+                          src={game.imageUrl}
+                          alt={game.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Gamepad2 className="h-12 w-12 text-primary/50" />
+                        </div>
+                      )}
+                      <div className="absolute top-3 right-3">
+                        <span className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full backdrop-blur-sm ${
+                          game.status === "online" ? "bg-green-500/20 text-green-400" : 
+                          game.status === "maintenance" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"
+                        }`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${
+                            game.status === "online" ? "bg-green-400" : 
+                            game.status === "maintenance" ? "bg-yellow-400" : "bg-red-400"
+                          }`} />
+                          {game.status}
+                        </span>
                       </div>
-                      <span className={`flex items-center gap-1.5 text-xs font-medium ${
-                        game.status === "online" ? "text-green-500" : 
-                        game.status === "maintenance" ? "text-yellow-500" : "text-red-500"
-                      }`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${
-                          game.status === "online" ? "bg-green-500" : 
-                          game.status === "maintenance" ? "bg-yellow-500" : "bg-red-500"
-                        }`} />
-                        {game.status}
-                      </span>
                     </div>
-                    <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">{game.name}</h3>
-                    <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                      <Users className="h-3 w-3" />
-                      {game.players} playing
-                    </p>
+                    <div className="p-4">
+                      <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">{game.name}</h3>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                        <Users className="h-3 w-3" />
+                        {formatPlayers(game.players)} playing now
+                      </p>
+                      {game.gameUrl && (
+                        <a
+                          href={game.gameUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-all"
+                        >
+                          <Play className="h-4 w-4" />
+                          Join Game
+                        </a>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {activeTab === "executor" && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-bold text-foreground">Script Executor</h2>
-                <p className="text-muted-foreground mt-1">Execute scripts on supported games</p>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Editor */}
-                <div className="lg:col-span-2 space-y-4">
-                  <div className="glass rounded-xl border border-border/30 overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-secondary/30">
-                      <span className="text-sm font-medium text-foreground">Script Editor</span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => copyToClipboard(scriptCode)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
-                        >
-                          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                          {copied ? "Copied" : "Copy"}
-                        </button>
-                      </div>
-                    </div>
-                    <textarea
-                      value={scriptCode}
-                      onChange={(e) => setScriptCode(e.target.value)}
-                      className="w-full h-80 p-4 bg-transparent text-sm text-foreground font-mono resize-none focus:outline-none"
-                      placeholder="-- Enter your script here..."
-                    />
-                  </div>
-                  <button className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25">
-                    <Play className="h-4 w-4" />
-                    Execute Script
-                  </button>
-                </div>
-
-                {/* Script Library */}
-                <div className="space-y-4">
-                  <div className="glass rounded-xl border border-border/30 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
-                      <span className="text-sm font-medium text-foreground">Script Library</span>
-                    </div>
-                    <div className="p-2 max-h-[400px] overflow-auto">
-                      {scripts.map((script, i) => (
-                        <button
-                          key={i}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="p-1.5 rounded bg-primary/10">
-                            <Sparkles className="h-3.5 w-3.5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-foreground">{script.name}</p>
-                            <p className="text-xs text-muted-foreground">{script.category}</p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
+          {/* Settings Tab */}
           {activeTab === "settings" && (
             <div className="space-y-6">
               <div>
@@ -811,12 +1043,44 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                       <p className="text-foreground font-medium">{user.username}</p>
                     </div>
                     <div>
+                      <label className="text-sm text-muted-foreground">Email</label>
+                      <p className="text-foreground font-medium">{user.email || "Not set"}</p>
+                    </div>
+                    <div>
                       <label className="text-sm text-muted-foreground">Account Type</label>
                       <p className="text-foreground font-medium capitalize flex items-center gap-2">
                         {user.role}
-                        {user.role === "admin" && <Crown className="h-4 w-4 text-primary" />}
+                        {isOwner && <Crown className="h-4 w-4 text-primary" />}
+                        {isStaff && <Shield className="h-4 w-4 text-accent" />}
                       </p>
                     </div>
+                  </div>
+                </div>
+
+                <div className="glass rounded-xl p-6 border border-border/30">
+                  <h3 className="font-semibold text-foreground mb-4">Role Permissions</h3>
+                  <div className="space-y-2 text-sm">
+                    {isOwner && (
+                      <>
+                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> View all users & IPs</p>
+                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Blacklist & unblacklist users</p>
+                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Force logout users</p>
+                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Add, edit & delete games</p>
+                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Create & delete staff accounts</p>
+                      </>
+                    )}
+                    {isStaff && (
+                      <>
+                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> View all users & IPs</p>
+                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Blacklist & unblacklist users</p>
+                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Force logout users</p>
+                        <p className="flex items-center gap-2 text-muted-foreground"><X className="h-4 w-4" /> Cannot modify games</p>
+                        <p className="flex items-center gap-2 text-muted-foreground"><X className="h-4 w-4" /> Cannot manage staff</p>
+                      </>
+                    )}
+                    {!isAdmin && (
+                      <p className="text-muted-foreground">Standard user permissions</p>
+                    )}
                   </div>
                 </div>
 
@@ -834,12 +1098,15 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
             </div>
           )}
 
+          {/* Admin Tab */}
           {activeTab === "admin" && isAdmin && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">Admin Panel</h2>
-                  <p className="text-muted-foreground mt-1">Manage users, games, and blacklist</p>
+                  <p className="text-muted-foreground mt-1">
+                    {isOwner ? "Full admin access - manage everything" : "Staff access - limited permissions"}
+                  </p>
                 </div>
                 <button
                   onClick={fetchAdminData}
@@ -856,7 +1123,8 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                 {[
                   { id: "users" as const, label: "Users", icon: Users },
                   { id: "blacklist" as const, label: "Blacklist", icon: UserX },
-                  { id: "games" as const, label: "Games", icon: Gamepad2 },
+                  ...(isOwner ? [{ id: "games" as const, label: "Games", icon: Gamepad2 }] : []),
+                  ...(isOwner ? [{ id: "staff" as const, label: "Staff", icon: Shield }] : []),
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -883,8 +1151,10 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                     {adminUsers.map((u) => (
                       <div key={u.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
                         <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
-                          {u.role === "admin" ? (
+                          {u.role === "owner" ? (
                             <Crown className="h-5 w-5 text-primary" />
+                          ) : u.role === "staff" ? (
+                            <Shield className="h-5 w-5 text-accent" />
                           ) : (
                             <span className="text-sm font-bold text-primary">
                               {u.username.charAt(0).toUpperCase()}
@@ -895,7 +1165,8 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                           <div className="flex items-center gap-2">
                             <p className="font-medium text-foreground">{u.username}</p>
                             <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              u.role === "admin" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                              u.role === "owner" ? "bg-primary/20 text-primary" : 
+                              u.role === "staff" ? "bg-accent/20 text-accent" : "bg-muted text-muted-foreground"
                             }`}>
                               {u.role}
                             </span>
@@ -908,11 +1179,19 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                           </div>
                           <p className="text-sm text-muted-foreground">{u.email}</p>
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Globe className="h-4 w-4" />
-                          <span className="font-mono">{u.ip}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-secondary/50 px-2 py-1 rounded">
+                            <Globe className="h-3 w-3" />
+                            <span className="font-mono text-xs">{u.ip}</span>
+                            <button
+                              onClick={() => copyToClipboard(u.ip, u.id)}
+                              className="p-1 hover:text-foreground transition-colors"
+                            >
+                              {copied === u.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                            </button>
+                          </div>
                         </div>
-                        {u.role !== "admin" && (
+                        {u.role !== "owner" && (
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => handleForceLogout(u.username)}
@@ -951,18 +1230,18 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                     {blacklistedUsers.map((u) => (
                       <div key={u.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
                         <div className="h-10 w-10 rounded-full bg-destructive/20 flex items-center justify-center">
-                          <AlertTriangle className="h-5 w-5 text-destructive" />
+                          <UserX className="h-5 w-5 text-destructive" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-foreground">{u.username}</p>
-                          <p className="text-sm text-muted-foreground">Reason: {u.reason}</p>
+                          <p className="text-sm text-destructive">{u.reason}</p>
                           <p className="text-xs text-muted-foreground mt-1">
                             By {u.blacklistedBy} on {new Date(u.blacklistedAt).toLocaleDateString()}
                           </p>
                         </div>
                         <button
                           onClick={() => handleUnblacklist(u.username)}
-                          className="inline-flex items-center gap-2 rounded-lg border border-green-500/50 bg-green-500/10 px-3 py-1.5 text-sm font-medium text-green-500 hover:bg-green-500/20 transition-all"
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium border border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all"
                         >
                           Unblacklist
                         </button>
@@ -977,17 +1256,19 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                 </div>
               )}
 
-              {/* Games Tab */}
-              {adminTab === "games" && (
+              {/* Games Tab - Owner Only */}
+              {adminTab === "games" && isOwner && (
                 <div className="space-y-4">
-                  <button
-                    onClick={() => setGameModal({ open: true, game: null })}
-                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Game
-                  </button>
-
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setGameModal({ open: true, game: null })}
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Game
+                    </button>
+                  </div>
+                  
                   <div className="glass rounded-xl border border-border/30 overflow-hidden">
                     <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
                       <span className="text-sm font-medium text-foreground">Games ({games.length})</span>
@@ -995,38 +1276,132 @@ game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
                     <div className="divide-y divide-border/30">
                       {games.map((game) => (
                         <div key={game.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
-                          <div className="h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center">
-                            <Gamepad2 className="h-5 w-5 text-primary" />
+                          <div className="h-12 w-12 rounded-lg bg-muted overflow-hidden">
+                            {game.imageUrl ? (
+                              <img src={game.imageUrl} alt={game.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Gamepad2 className="h-5 w-5 text-muted-foreground" />
+                              </div>
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-foreground">{game.name}</p>
-                            <p className="text-sm text-muted-foreground">{game.players} players</p>
+                            <p className="text-sm text-muted-foreground flex items-center gap-2">
+                              <Users className="h-3 w-3" />
+                              {formatPlayers(game.players)} playing
+                              <span className={`flex items-center gap-1 ${
+                                game.status === "online" ? "text-green-500" : 
+                                game.status === "maintenance" ? "text-yellow-500" : "text-red-500"
+                              }`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${
+                                  game.status === "online" ? "bg-green-500" : 
+                                  game.status === "maintenance" ? "bg-yellow-500" : "bg-red-500"
+                                }`} />
+                                {game.status}
+                              </span>
+                            </p>
                           </div>
-                          <span className={`text-xs px-2 py-1 rounded-full ${
-                            game.status === "online" ? "bg-green-500/20 text-green-500" : 
-                            game.status === "maintenance" ? "bg-yellow-500/20 text-yellow-500" : "bg-red-500/20 text-red-500"
-                          }`}>
-                            {game.status}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => openEditGame(game)}
+                          {game.gameUrl && (
+                            <a
+                              href={game.gameUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
                               className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                              title="Edit"
+                              title="View Game"
                             >
-                              <Edit3 className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteGame(game.id)}
-                              className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
+                              <Eye className="h-4 w-4" />
+                            </a>
+                          )}
+                          <button
+                            onClick={() => openEditGame(game)}
+                            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                            title="Edit"
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteGame(game.id)}
+                            className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       ))}
+                      {games.length === 0 && (
+                        <div className="p-8 text-center text-muted-foreground">
+                          No games added yet
+                        </div>
+                      )}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Staff Tab - Owner Only */}
+              {adminTab === "staff" && isOwner && (
+                <div className="space-y-4">
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setStaffModal(true)}
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      Create Staff Account
+                    </button>
+                  </div>
+                  
+                  <div className="glass rounded-xl border border-border/30 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
+                      <span className="text-sm font-medium text-foreground">Staff Accounts ({staffAccounts.length})</span>
+                    </div>
+                    <div className="divide-y divide-border/30">
+                      {staffAccounts.map((staff) => (
+                        <div key={staff.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
+                          <div className="h-10 w-10 rounded-full bg-accent/20 flex items-center justify-center">
+                            <Shield className="h-5 w-5 text-accent" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-foreground">{staff.username}</p>
+                              {staff.isOnline && (
+                                <span className="flex items-center gap-1 text-xs text-green-500">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                  Online
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{staff.email}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Created {new Date(staff.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteStaff(staff.username)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-destructive/50 bg-destructive/10 text-destructive hover:bg-destructive/20 transition-all"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ))}
+                      {staffAccounts.length === 0 && (
+                        <div className="p-8 text-center text-muted-foreground">
+                          No staff accounts created yet
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border/30 bg-secondary/20 p-4">
+                    <h4 className="font-medium text-foreground mb-2">Staff Permissions</h4>
+                    <ul className="text-sm text-muted-foreground space-y-1">
+                      <li className="flex items-center gap-2"><Check className="h-3 w-3 text-green-500" /> View all users and their IPs</li>
+                      <li className="flex items-center gap-2"><Check className="h-3 w-3 text-green-500" /> Blacklist and unblacklist users</li>
+                      <li className="flex items-center gap-2"><Check className="h-3 w-3 text-green-500" /> Force logout users</li>
+                      <li className="flex items-center gap-2"><X className="h-3 w-3 text-red-500" /> Cannot add, edit, or delete games</li>
+                      <li className="flex items-center gap-2"><X className="h-3 w-3 text-red-500" /> Cannot create or manage staff accounts</li>
+                    </ul>
                   </div>
                 </div>
               )}
