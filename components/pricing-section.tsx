@@ -7,35 +7,35 @@ const DISCORD_URL = "https://discord.gg/YRF26H8bMA"
 
 const plans = [
   {
-    name: "Whitelist",
+    name: "Standard",
     price: "500R$",
     period: "/lifetime",
-    description: "It's only only the whitelit.",
+    description: "Perfect to discover.",
     features: [
       "Access to 100+ games",
       "Cloud Script Hub",
       "Basic script execution",
       "Discord support",
-      "Little Strict ToS",
+      "Strict ToS",
     ],
-    cta: "Get Whitelist",
+    cta: "Get Standard",
     highlighted: false,
     action: "discord" as const,
   },
   {
-    name: "Abuse Permission (Add-On)",
-    price: "500R$",
+    name: "Premium",
+    price: "1000R$",
     period: "/lifetime",
-    description: "Warning: This is only a Add-On. You need to buy the Whitelist before buying this!",
+    description: "The Best Plan.",
     features: [
       "Access to 100+ games",
       "Cloud Script Hub",
       "Unlimited script execution",
       "Priority support",
-      "More LEess ToS",
+      "Very Less ToS",
       "Auto-run support",
     ],
-    cta: "Get Abuse Permissions",
+    cta: "Get Premium",
     highlighted: true,
     action: "discord" as const,
   },
@@ -92,11 +92,10 @@ export function PricingSection() {
           {plans.map((plan) => (
             <div
               key={plan.name}
-              className={`group relative flex flex-col rounded-2xl p-8 transition-all duration-300 hover:scale-[1.02] ${
-                plan.highlighted
+              className={`group relative flex flex-col rounded-2xl p-8 transition-all duration-300 hover:scale-[1.02] ${plan.highlighted
                   ? "glass-strong shadow-xl shadow-primary/10 animate-border-glow border-primary/40"
                   : "glass hover:shadow-lg hover:shadow-primary/5"
-              }`}
+                }`}
             >
               {plan.highlighted && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
@@ -108,9 +107,8 @@ export function PricingSection() {
               )}
 
               {/* Top gradient line */}
-              <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent ${
-                plan.highlighted ? "via-primary/60" : "via-primary/30 opacity-0 group-hover:opacity-100"
-              } to-transparent transition-opacity`} />
+              <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent ${plan.highlighted ? "via-primary/60" : "via-primary/30 opacity-0 group-hover:opacity-100"
+                } to-transparent transition-opacity`} />
 
               <div className="mb-6">
                 <h3 className="text-lg font-bold text-foreground">{plan.name}</h3>
@@ -139,22 +137,20 @@ export function PricingSection() {
                     href={DISCORD_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={`block w-full rounded-xl px-6 py-3.5 text-center text-sm font-semibold transition-all duration-300 ${
-                      plan.highlighted
+                    className={`block w-full rounded-xl px-6 py-3.5 text-center text-sm font-semibold transition-all duration-300 ${plan.highlighted
                         ? "bg-gradient-to-r from-primary to-accent text-primary-foreground hover:shadow-lg hover:shadow-primary/30 hover:brightness-110"
                         : "border border-border/50 bg-secondary/50 text-foreground hover:bg-secondary hover:border-border"
-                    }`}
+                      }`}
                   >
                     {plan.cta}
                   </a>
                 ) : (
                   <button
                     onClick={handleClick}
-                    className={`w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition-all duration-300 ${
-                      plan.highlighted
+                    className={`w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition-all duration-300 ${plan.highlighted
                         ? "bg-gradient-to-r from-primary to-accent text-primary-foreground hover:shadow-lg hover:shadow-primary/30 hover:brightness-110"
                         : "border border-border/50 bg-secondary/50 text-foreground hover:bg-secondary hover:border-border"
-                    }`}
+                      }`}
                   >
                     {plan.cta}
                   </button>
@@ -167,11 +163,10 @@ export function PricingSection() {
 
       {/* Toast notification */}
       <div
-        className={`fixed bottom-8 left-1/2 z-50 -translate-x-1/2 transition-all duration-500 ease-out ${
-          showToast
+        className={`fixed bottom-8 left-1/2 z-50 -translate-x-1/2 transition-all duration-500 ease-out ${showToast
             ? "translate-y-0 opacity-100"
             : "translate-y-4 opacity-0 pointer-events-none"
-        }`}
+          }`}
       >
         <div className="rounded-xl glass-strong px-8 py-4 shadow-2xl shadow-primary/20 border-primary/30">
           <p className="text-sm font-semibold text-foreground">Soon...</p>
