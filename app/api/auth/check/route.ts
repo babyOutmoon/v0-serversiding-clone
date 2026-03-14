@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { isBlacklisted, sessions, users } from "@/lib/store"
+import { isBlacklisted, isSessionValid, sessions, users } from "@/lib/store"
 
 export async function POST(request: Request) {
   try {
@@ -23,9 +23,9 @@ export async function POST(request: Request) {
       })
     }
 
-    // Verify session
-    const storedSession = sessions.get(username.toLowerCase())
-    if (!storedSession || storedSession !== sessionToken) {
+    // Verify session with expiration check
+    const session = sessions.get(username.toLowerCase())
+    if (!session || !isSessionValid(username, sessionToken)) {
       return NextResponse.json({ valid: false, reason: "Session expired" })
     }
 

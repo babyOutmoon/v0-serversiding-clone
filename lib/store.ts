@@ -52,8 +52,12 @@ export const users = new Map<string, User>([
 // Blacklist store
 export const blacklist = new Map<string, BlacklistedUser>()
 
-// Active sessions (username -> session token)
-export const sessions = new Map<string, string>()
+// Active sessions (username -> session data with expiration)
+export type Session = {
+  token: string
+  expiresAt: number
+}
+export const sessions = new Map<string, Session>()
 
 // Games store
 export const games = new Map<string, Game>([
@@ -100,8 +104,19 @@ export function blacklistUser(username: string, reason: string, blacklistedBy: s
   
   // Force logout
   sessions.delete(username.toLowerCase())
-  users.get(username.toLowerCase())!.isOnline = false
+  user.isOnline = false
   
+  return true
+}
+
+export function isSessionValid(username: string, token: string): boolean {
+  const session = sessions.get(username.toLowerCase())
+  if (!session) return false
+  if (session.token !== token) return false
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(username.toLowerCase())
+    return false
+  }
   return true
 }
 

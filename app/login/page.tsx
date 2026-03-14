@@ -47,11 +47,16 @@ export default function LoginPage() {
         return
       }
 
-      // Store session in localStorage
+      // Store session in localStorage with expiration
       localStorage.setItem("moonss_session", JSON.stringify({
         ...data.user,
         sessionToken: data.sessionToken,
+        expiresAt: data.expiresAt,
       }))
+      
+      // Trigger storage event for other tabs
+      window.dispatchEvent(new Event("storage"))
+      
       router.push("/dashboard")
     } catch {
       setError("Something went wrong. Please try again.")

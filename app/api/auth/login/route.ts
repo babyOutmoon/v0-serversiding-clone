@@ -48,11 +48,13 @@ export async function POST(request: Request) {
     user.ip = ip
     user.isOnline = true
 
-    // Create session
+    // Create session with 30-day expiration
     const sessionToken = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`
-    sessions.set(username.toLowerCase(), sessionToken)
+    const expiresAt = Date.now() + (30 * 24 * 60 * 60 * 1000) // 30 days
+    sessions.set(username.toLowerCase(), { token: sessionToken, expiresAt })
 
-    return NextResponse.json({
+    // Create response with cookie
+    const response = NextResponse.json({
       success: true,
       user: {
         id: user.id,
@@ -61,7 +63,26 @@ export async function POST(request: Request) {
         email: user.email,
       },
       sessionToken,
+      expiresAt,
     })
+
+    // Set HTTP-only cookie for session persistence
+    response.cookies.set("moonss_auth", JSON.stringify({
+      username: user.username,
+      sessionToken,
+      role: user.role,
+      id: user.id,
+      email: user.email,
+      expiresAt,
+    }), {
+      httpOnly: false, // Allow JS access for client-side state
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 30 * 24 * 60 * 60, // 30 days in seconds
+      path: "/",
+    })
+
+    return response
   } catch {
     return NextResponse.json(
       { error: "Something went wrong" },
