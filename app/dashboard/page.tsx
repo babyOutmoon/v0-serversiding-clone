@@ -36,7 +36,8 @@ import {
   Loader2,
   AlertTriangle,
   Lock,
-  Camera
+  Camera,
+  Webhook
 } from "lucide-react"
 
 type UserPlan = "none" | "standard" | "premium"
@@ -137,7 +138,7 @@ export default function DashboardPage() {
   const [blacklistedUsers, setBlacklistedUsers] = useState<BlacklistedUser[]>([])
   const [games, setGames] = useState<Game[]>([])
   const [staffAccounts, setStaffAccounts] = useState<StaffAccount[]>([])
-  const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "games" | "staff">("users")
+  const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "webhooks" | "staff">("users")
   const [loading, setLoading] = useState(false)
   
   // Whitelist state
@@ -160,6 +161,8 @@ export default function DashboardPage() {
   const [newStaffEmail, setNewStaffEmail] = useState("")
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
+  const [webhookKey, setWebhookKey] = useState("")
+  const [webhookLoading, setWebhookLoading] = useState(false)
 
   const isOwner = user?.role === "owner"
   const isStaff = user?.role === "staff"
@@ -223,6 +226,35 @@ export default function DashboardPage() {
       // Ignore
     }
   }, [user])
+
+  // Fetch webhook key (owner only)
+  const fetchWebhookKey = useCallback(async () => {
+    if (!isOwner) return
+    try {
+      const res = await fetch("/api/webhook?action=getKey&adminKey=owner-access")
+      const data = await res.json()
+      if (data.webhookKey) setWebhookKey(data.webhookKey)
+    } catch {
+      // Ignore
+    }
+  }, [isOwner])
+
+  // Regenerate webhook key
+  const regenerateWebhookKey = async () => {
+    if (!isOwner) return
+    setWebhookLoading(true)
+    try {
+      const res = await fetch("/api/webhook?action=regenerateKey&adminKey=owner-access")
+      const data = await res.json()
+      if (data.webhookKey) {
+        setWebhookKey(data.webhookKey)
+        showToast("Webhook key regenerated!", "success")
+      }
+    } catch {
+      showToast("Failed to regenerate key", "error")
+    }
+    setWebhookLoading(false)
+  }
 
   const refreshGameData = useCallback(async () => {
     if (games.length === 0) return
@@ -292,11 +324,12 @@ export default function DashboardPage() {
     router.push("/login")
   }, [router])
 
-  useEffect(() => {
+useEffect(() => {
     if (user && isAdmin && activeTab === "admin") {
       fetchAdminData()
+      if (isOwner) fetchWebhookKey()
     }
-  }, [user, isAdmin, activeTab, fetchAdminData])
+  }, [user, isAdmin, isOwner, activeTab, fetchAdminData, fetchWebhookKey])
 
   useEffect(() => {
     if (user && activeTab === "games") {
@@ -1576,7 +1609,7 @@ export default function DashboardPage() {
                 {[
                   { id: "users", label: "Users", icon: Users },
                   { id: "blacklist", label: "Blacklist", icon: UserX },
-                  ...(isOwner ? [{ id: "games", label: "Games", icon: Gamepad2 }] : []),
+                  ...(isOwner ? [{ id: "webhooks", label: "Webhooks", icon: Webhook }] : []),
                   ...(isOwner ? [{ id: "staff", label: "Staff", icon: Shield }] : []),
                 ].map((tab) => (
                   <button
@@ -1739,76 +1772,206 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Games - Owner Only */}
-              {adminTab === "games" && isOwner && (
-                <div className="space-y-4">
-                  <div className="flex justify-end">
+              {/* Webhooks - Owner Only */}
+              {adminTab === "webhooks" && isOwner && (
+                <div className="space-y-6">
+                  <div className="glass rounded-xl border border-border/30 p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="font-semibold text-foreground flex items-center gap-2">
+                          <Key className="h-5 w-5 text-primary" />
+                          Webhook Key
+                        </h3>
+                        <p className="text-sm text-muted-foreground mt-1">Use this key to authenticate webhook requests from Roblox</p>
+                      </div>
+                      <button
+                        onClick={regenerateWebhookKey}
+                        disabled={webhookLoading}
+                        className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50"
+                      >
+                        {webhookLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        Regenerate
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-3 border border-border/30">
+                      <code className="flex-1 text-sm font-mono text-foreground break-all">{webhookKey || "Loading..."}</code>
+                      <button
+                        onClick={() => copyToClipboard(webhookKey, "webhook-key")}
+                        className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                      >
+                        {copied === "webhook-key" ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="glass rounded-xl border border-border/30 p-6">
+                    <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                      <Globe className="h-5 w-5 text-primary" />
+                      Webhook URL
+                    </h3>
+                    <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-3 border border-border/30">
+                      <code className="flex-1 text-sm font-mono text-foreground">{typeof window !== "undefined" ? `${window.location.origin}/api/webhook` : "/api/webhook"}</code>
+                      <button
+                        onClick={() => copyToClipboard(typeof window !== "undefined" ? `${window.location.origin}/api/webhook` : "/api/webhook", "webhook-url")}
+                        className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                      >
+                        {copied === "webhook-url" ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="glass rounded-xl border border-border/30 p-6">
+                    <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-primary" />
+                      Roblox Lua Script Example
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-4">Copy this script and modify it for your Roblox game to automatically send game data</p>
+                    <div className="bg-[#1a1a2e] rounded-lg p-4 border border-border/30 overflow-x-auto">
+                      <pre className="text-sm font-mono text-green-400 whitespace-pre-wrap">{`-- Moon Server-Side Webhook Script
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}/api/webhook"
+local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
+
+-- Add game on server start
+local function addGame()
+    local success, err = pcall(function()
+        HttpService:RequestAsync({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "Bearer " .. WEBHOOK_KEY
+            },
+            Body = HttpService:JSONEncode({
+                action = "addGame",
+                gameData = {
+                    placeId = tostring(game.PlaceId),
+                    name = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name,
+                    players = #Players:GetPlayers(),
+                    gameUrl = "https://www.roblox.com/games/" .. game.PlaceId
+                }
+            })
+        })
+    end)
+    if not success then warn("Webhook error:", err) end
+end
+
+-- Update player count periodically
+local function updatePlayers()
+    while true do
+        wait(30) -- Update every 30 seconds
+        pcall(function()
+            HttpService:RequestAsync({
+                Url = WEBHOOK_URL,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "Bearer " .. WEBHOOK_KEY
+                },
+                Body = HttpService:JSONEncode({
+                    action = "updateGame",
+                    gameData = {
+                        placeId = tostring(game.PlaceId),
+                        players = #Players:GetPlayers()
+                    }
+                })
+            })
+        end)
+    end
+end
+
+addGame()
+spawn(updatePlayers)`}</pre>
+                    </div>
                     <button
-                      onClick={() => setGameModal({ open: true, game: null })}
-                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all"
+                      onClick={() => copyToClipboard(`-- Moon Server-Side Webhook Script
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}/api/webhook"
+local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
+
+local function addGame()
+    local success, err = pcall(function()
+        HttpService:RequestAsync({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "Bearer " .. WEBHOOK_KEY
+            },
+            Body = HttpService:JSONEncode({
+                action = "addGame",
+                gameData = {
+                    placeId = tostring(game.PlaceId),
+                    name = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name,
+                    players = #Players:GetPlayers(),
+                    gameUrl = "https://www.roblox.com/games/" .. game.PlaceId
+                }
+            })
+        })
+    end)
+    if not success then warn("Webhook error:", err) end
+end
+
+local function updatePlayers()
+    while true do
+        wait(30)
+        pcall(function()
+            HttpService:RequestAsync({
+                Url = WEBHOOK_URL,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "Bearer " .. WEBHOOK_KEY
+                },
+                Body = HttpService:JSONEncode({
+                    action = "updateGame",
+                    gameData = {
+                        placeId = tostring(game.PlaceId),
+                        players = #Players:GetPlayers()
+                    }
+                })
+            })
+        end)
+    end
+end
+
+addGame()
+spawn(updatePlayers)`, "lua-script")}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all"
                     >
-                      <Plus className="h-4 w-4" />
-                      Add Game
+                      {copied === "lua-script" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      Copy Script
                     </button>
                   </div>
-                  <div className="glass rounded-xl border border-border/30 overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b border-border/30 bg-muted/30">
-                            <th className="text-left p-4 text-sm font-semibold text-foreground">Game</th>
-                            <th className="text-left p-4 text-sm font-semibold text-foreground">Players</th>
-                            <th className="text-left p-4 text-sm font-semibold text-foreground">Status</th>
-                            <th className="text-left p-4 text-sm font-semibold text-foreground">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {games.map((game) => (
-                            <tr key={game.id} className="border-b border-border/30 last:border-0">
-                              <td className="p-4">
-                                <div className="flex items-center gap-3">
-                                  {game.imageUrl ? (
-                                    <img src={game.imageUrl} alt={game.name} className="h-10 w-10 rounded-lg object-cover" />
-                                  ) : (
-                                    <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
-                                      <Gamepad2 className="h-5 w-5 text-muted-foreground" />
-                                    </div>
-                                  )}
-                                  <span className="font-medium text-foreground">{game.name}</span>
-                                </div>
-                              </td>
-                              <td className="p-4 text-sm text-muted-foreground">{formatPlayers(game.players)}</td>
-                              <td className="p-4">
-                                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                  game.status === "online" ? "bg-green-500/20 text-green-500" :
-                                  game.status === "maintenance" ? "bg-yellow-500/20 text-yellow-500" :
-                                  "bg-destructive/20 text-destructive"
-                                }`}>
-                                  {game.status}
-                                </span>
-                              </td>
-                              <td className="p-4">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => openEditGame(game)}
-                                    className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                                    title="Edit"
-                                  >
-                                    <Edit3 className="h-4 w-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteGame(game.id)}
-                                    className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+
+                  <div className="glass rounded-xl border border-border/30 p-6">
+                    <h3 className="font-semibold text-foreground mb-4">API Actions</h3>
+                    <div className="space-y-4">
+                      <div className="p-4 rounded-lg bg-muted/30 border border-border/30">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="px-2 py-0.5 rounded bg-green-500/20 text-green-500 text-xs font-mono">POST</span>
+                          <span className="font-medium text-foreground">addGame</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">Adds a new game to the list. Required: placeId, name</p>
+                      </div>
+                      <div className="p-4 rounded-lg bg-muted/30 border border-border/30">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-500 text-xs font-mono">POST</span>
+                          <span className="font-medium text-foreground">updateGame</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">Updates player count or status. Required: placeId</p>
+                      </div>
+                      <div className="p-4 rounded-lg bg-muted/30 border border-border/30">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-500 text-xs font-mono">POST</span>
+                          <span className="font-medium text-foreground">removeGame</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">Removes a game from the list. Required: placeId</p>
+                      </div>
                     </div>
                   </div>
                 </div>
