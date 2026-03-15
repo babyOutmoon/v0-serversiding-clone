@@ -63,6 +63,7 @@ export async function POST(request: Request) {
         email: user.email,
         plan: user.plan,
         robloxUsername: user.robloxUsername,
+        avatar: user.avatar,
       },
       sessionToken,
       expiresAt,
@@ -77,6 +78,7 @@ export async function POST(request: Request) {
       email: user.email,
       plan: user.plan,
       robloxUsername: user.robloxUsername,
+      avatar: user.avatar,
       expiresAt,
     }), {
       httpOnly: false,

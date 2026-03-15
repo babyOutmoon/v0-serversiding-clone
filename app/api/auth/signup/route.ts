@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       isOnline: false,
       robloxUsername: null,
       plan: "none",
+      avatar: null,
     }
 
     users.set(username.toLowerCase(), newUser)

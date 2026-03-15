@@ -15,6 +15,7 @@ export type User = {
   isOnline: boolean
   robloxUsername: string | null
   plan: UserPlan
+  avatar: string | null
 }
 
 export type BlacklistedUser = {
@@ -48,6 +49,7 @@ const OWNER: User = {
   isOnline: false,
   robloxUsername: null,
   plan: "premium", // Owner has premium by default
+  avatar: null,
 }
 
 // Users store
@@ -177,10 +179,18 @@ export function createStaffAccount(username: string, password: string, email: st
     isOnline: false,
     robloxUsername: null,
     plan: "premium", // Staff get premium by default
+    avatar: null,
   }
   
   users.set(username.toLowerCase(), newStaff)
   return newStaff
+}
+
+export function updateUserAvatar(username: string, avatar: string): boolean {
+  const user = users.get(username.toLowerCase())
+  if (!user) return false
+  user.avatar = avatar
+  return true
 }
 
 export function getStaffAccounts(): User[] {

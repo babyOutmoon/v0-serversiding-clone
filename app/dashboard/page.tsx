@@ -35,7 +35,8 @@ import {
   Key,
   Loader2,
   AlertTriangle,
-  Lock
+  Lock,
+  Camera
 } from "lucide-react"
 
 type UserPlan = "none" | "standard" | "premium"
@@ -48,6 +49,7 @@ type User = {
   sessionToken?: string
   plan?: UserPlan
   robloxUsername?: string | null
+  avatar?: string | null
 }
 
 type AdminUser = {
@@ -157,6 +159,7 @@ export default function DashboardPage() {
   const [newStaffPassword, setNewStaffPassword] = useState("")
   const [newStaffEmail, setNewStaffEmail] = useState("")
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
 
   const isOwner = user?.role === "owner"
   const isStaff = user?.role === "staff"
@@ -342,6 +345,59 @@ export default function DashboardPage() {
     localStorage.removeItem("moonss_session")
     document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
     router.push("/")
+  }
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+
+    // Check file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      showToast("Image must be less than 2MB", "error")
+      return
+    }
+
+    // Check file type
+    if (!file.type.startsWith("image/")) {
+      showToast("Please upload an image file", "error")
+      return
+    }
+
+    setAvatarUploading(true)
+
+    try {
+      // Convert to base64
+      const reader = new FileReader()
+      reader.onload = async () => {
+        const base64 = reader.result as string
+
+        const res = await fetch("/api/user/avatar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: user.username,
+            avatar: base64,
+          }),
+        })
+
+        const data = await res.json()
+
+        if (data.success) {
+          setUser(prev => prev ? { ...prev, avatar: base64 } : prev)
+          const session = JSON.parse(localStorage.getItem("moonss_session") || "{}")
+          session.avatar = base64
+          localStorage.setItem("moonss_session", JSON.stringify(session))
+          showToast("Profile picture updated!", "success")
+        } else {
+          showToast(data.error || "Failed to update avatar", "error")
+        }
+        setAvatarUploading(false)
+      }
+      reader.readAsDataURL(file)
+    } catch {
+      showToast("Something went wrong", "error")
+      setAvatarUploading(false)
+    }
   }
 
   // Whitelist verification
@@ -905,18 +961,21 @@ export default function DashboardPage() {
       {/* Sidebar */}
       <aside className="w-64 glass-strong border-r border-border/30 flex flex-col">
         <div className="p-6 border-b border-border/30">
-          <Link href="/" className="flex items-center gap-3">
-            <Image
-              src="/images/logo.png"
-              alt="Moon Server-Side"
-              width={40}
-              height={40}
-              className="rounded-lg"
-            />
-            <div>
-              <h1 className="font-bold text-foreground">Moon SS</h1>
-              <p className="text-xs text-muted-foreground">Dashboard</p>
-            </div>
+          <Link href="/" className="flex flex-col items-center gap-2">
+            <h1 className="text-3xl font-black tracking-wider">
+              <span className="text-primary">MOON</span>
+            </h1>
+            <span className={`px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+              isAdmin 
+                ? "bg-primary/20 text-primary border border-primary/30" 
+                : userPlan === "premium" 
+                  ? "bg-primary/20 text-primary border border-primary/30"
+                  : userPlan === "standard"
+                    ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                    : "bg-muted text-muted-foreground border border-border/30"
+            }`}>
+              Plan: {isAdmin ? user.role : userPlan === "none" ? "None" : userPlan}
+            </span>
           </Link>
         </div>
 
@@ -940,8 +999,10 @@ export default function DashboardPage() {
 
         <div className="p-4 border-t border-border/30">
           <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-secondary/50">
-            <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
-              {isOwner ? (
+            <div className="h-10 w-10 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center">
+              {user.avatar ? (
+                <img src={user.avatar} alt="Profile" className="h-full w-full object-cover" />
+              ) : isOwner ? (
                 <Crown className="h-5 w-5 text-primary" />
               ) : isStaff ? (
                 <Shield className="h-5 w-5 text-accent" />
@@ -1377,6 +1438,54 @@ export default function DashboardPage() {
               <div>
                 <h2 className="text-2xl font-bold text-foreground">Settings</h2>
                 <p className="text-muted-foreground mt-1">Manage your account settings</p>
+              </div>
+
+              {/* Profile Picture */}
+              <div className="glass rounded-xl border border-border/30 p-6">
+                <h3 className="font-semibold text-foreground mb-4">Profile Picture</h3>
+                <div className="flex items-center gap-6">
+                  <div className="relative group">
+                    <div className="h-24 w-24 rounded-full overflow-hidden bg-secondary border-2 border-border/50">
+                      {user.avatar ? (
+                        <img 
+                          src={user.avatar} 
+                          alt="Profile" 
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center bg-primary/20">
+                          {isOwner ? (
+                            <Crown className="h-10 w-10 text-primary" />
+                          ) : isStaff ? (
+                            <Shield className="h-10 w-10 text-accent" />
+                          ) : (
+                            <span className="text-3xl font-bold text-primary">
+                              {user.username.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <label className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                      {avatarUploading ? (
+                        <Loader2 className="h-6 w-6 text-white animate-spin" />
+                      ) : (
+                        <Camera className="h-6 w-6 text-white" />
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarUpload}
+                        className="hidden"
+                        disabled={avatarUploading}
+                      />
+                    </label>
+                  </div>
+                  <div>
+                    <p className="text-sm text-foreground font-medium">Change your profile picture</p>
+                    <p className="text-xs text-muted-foreground mt-1">JPG, PNG or GIF. Max 2MB.</p>
+                  </div>
+                </div>
               </div>
 
               <div className="glass rounded-xl border border-border/30 p-6">
