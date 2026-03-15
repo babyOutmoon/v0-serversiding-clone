@@ -1,6 +1,8 @@
 // Centralized data store for Moon Server-Side
 // In production, replace with a proper database
 
+export type UserPlan = "none" | "standard" | "premium"
+
 export type User = {
   id: string
   username: string
@@ -11,6 +13,8 @@ export type User = {
   createdAt: string
   lastLogin: string
   isOnline: boolean
+  robloxUsername: string | null
+  plan: UserPlan
 }
 
 export type BlacklistedUser = {
@@ -42,6 +46,8 @@ const OWNER: User = {
   createdAt: new Date().toISOString(),
   lastLogin: new Date().toISOString(),
   isOnline: false,
+  robloxUsername: null,
+  plan: "premium", // Owner has premium by default
 }
 
 // Users store
@@ -68,6 +74,10 @@ export const games = new Map<string, Game>([
   ["5", { id: "5", name: "Murder Mystery 2", players: 340000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/142823291", placeId: "142823291" }],
   ["6", { id: "6", name: "Jailbreak", players: 280000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/606849621", placeId: "606849621" }],
 ])
+
+// Gamepass IDs
+export const STANDARD_GAMEPASS_ID = "1699936888"
+export const PREMIUM_GAMEPASS_ID = "1740553477"
 
 // Helper functions
 export function isBlacklisted(username: string): BlacklistedUser | null {
@@ -165,6 +175,8 @@ export function createStaffAccount(username: string, password: string, email: st
     createdAt: new Date().toISOString(),
     lastLogin: new Date().toISOString(),
     isOnline: false,
+    robloxUsername: null,
+    plan: "premium", // Staff get premium by default
   }
   
   users.set(username.toLowerCase(), newStaff)
@@ -180,6 +192,15 @@ export function deleteStaffAccount(username: string): boolean {
   if (!user || user.role !== "staff") return false
   users.delete(username.toLowerCase())
   sessions.delete(username.toLowerCase())
+  return true
+}
+
+export function updateUserPlan(username: string, plan: UserPlan, robloxUsername: string): boolean {
+  const user = users.get(username.toLowerCase())
+  if (!user) return false
+  
+  user.plan = plan
+  user.robloxUsername = robloxUsername
   return true
 }
 

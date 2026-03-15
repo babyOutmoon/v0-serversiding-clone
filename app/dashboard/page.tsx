@@ -30,8 +30,15 @@ import {
   Play,
   Eye,
   Copy,
-  Check
+  Check,
+  FileText,
+  Key,
+  Loader2,
+  AlertTriangle,
+  Lock
 } from "lucide-react"
+
+type UserPlan = "none" | "standard" | "premium"
 
 type User = {
   id: string
@@ -39,6 +46,8 @@ type User = {
   role: string
   email?: string
   sessionToken?: string
+  plan?: UserPlan
+  robloxUsername?: string | null
 }
 
 type AdminUser = {
@@ -50,6 +59,8 @@ type AdminUser = {
   createdAt: string
   lastLogin: string
   isOnline: boolean
+  plan: UserPlan
+  robloxUsername: string | null
 }
 
 type BlacklistedUser = {
@@ -78,7 +89,40 @@ type StaffAccount = {
   isOnline: boolean
 }
 
-type Tab = "home" | "games" | "settings" | "admin"
+type Tab = "home" | "games" | "whitelist" | "tos" | "settings" | "admin"
+
+// ToS content
+const STANDARD_TOS = [
+  "Do NOT use external Executors (E.g: Exser, Polaria)",
+  "Do NOT snitch in game (e.g., saying \"Moon Serverside\", talking about backdoors)",
+  "Do NOT use C00lkidd-like GUIs (e.g., k00pgui)",
+  "Do NOT reverse engineer",
+  "Do NOT abuse the tool while the developer is in-game",
+  "Do NOT use for any unlawful activities",
+  "Do NOT shutdown servers without valid reason",
+  "Do NOT use NSFW scripts (Instant blacklist)",
+  "Do NOT teleport players to other games",
+  "Do NOT use obfuscated scripts (Instant blacklist; appeal possible)",
+  "Do NOT infect/backdoor games",
+  "Do NOT mass ban",
+  "Do NOT use MarketplaceService to prompt gamepass purchases",
+  "Do NOT run Dex",
+  "Do NOT change maps (unless fewer than 3 players are present)",
+  "Do NOT insert anti-leave scripts",
+  "Do NOT leak games",
+  "Do NOT mass-kill players",
+  "Do NOT run scripts for non-buyers",
+  "Avoid flexing/showing off, may result in reports or blacklisting",
+]
+
+const PREMIUM_TOS = [
+  "No NSFW/Racist or religious content",
+  "No snitching or informing game owners about the backdoor",
+  "No teleporting players to other games",
+  "No removing Moon GUI from other players",
+  "No infecting or backdooring the game with a custom serverside",
+  "No changing map if game has 7+ players",
+]
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -93,6 +137,12 @@ export default function DashboardPage() {
   const [staffAccounts, setStaffAccounts] = useState<StaffAccount[]>([])
   const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "games" | "staff">("users")
   const [loading, setLoading] = useState(false)
+  
+  // Whitelist state
+  const [robloxInput, setRobloxInput] = useState("")
+  const [whitelistLoading, setWhitelistLoading] = useState(false)
+  const [whitelistError, setWhitelistError] = useState("")
+  const [whitelistSuccess, setWhitelistSuccess] = useState("")
   
   // Modals
   const [blacklistModal, setBlacklistModal] = useState<{ open: boolean; username: string }>({ open: false, username: "" })
@@ -111,6 +161,8 @@ export default function DashboardPage() {
   const isOwner = user?.role === "owner"
   const isStaff = user?.role === "staff"
   const isAdmin = isOwner || isStaff
+  const userPlan = user?.plan || "none"
+  const hasAccess = userPlan !== "none" || isAdmin
 
   const showToast = (message: string, type: "success" | "error") => {
     setToast({ message, type })
@@ -139,7 +191,6 @@ export default function DashboardPage() {
         fetch(`/api/admin?action=games&admin=${user.username}`),
       ]
       
-      // Only owner can fetch staff list
       if (isOwner) {
         requests.push(fetch(`/api/admin?action=staff&admin=${user.username}`))
       }
@@ -159,7 +210,17 @@ export default function DashboardPage() {
     setLoading(false)
   }, [user, isAdmin, isOwner])
 
-  // Refresh game data periodically for real-time player counts
+  // Fetch games for non-admin users too
+  const fetchGames = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/admin?action=games&admin=${user?.username || ""}`)
+      const data = await res.json()
+      if (data.games) setGames(data.games)
+    } catch {
+      // Ignore
+    }
+  }, [user])
+
   const refreshGameData = useCallback(async () => {
     if (games.length === 0) return
     
@@ -187,13 +248,45 @@ export default function DashboardPage() {
   }, [games])
 
   useEffect(() => {
+    // Check localStorage first
     const session = localStorage.getItem("moonss_session")
-    if (!session) {
-      router.push("/login")
-      return
+    if (session) {
+      try {
+        const parsed = JSON.parse(session)
+        // Check if session is expired
+        if (parsed.expiresAt && Date.now() > parsed.expiresAt) {
+          localStorage.removeItem("moonss_session")
+          router.push("/login")
+          return
+        }
+        setUser(parsed)
+        return
+      } catch {
+        localStorage.removeItem("moonss_session")
+      }
     }
-    const parsed = JSON.parse(session)
-    setUser(parsed)
+    
+    // Check cookie as fallback
+    const cookies = document.cookie.split(";")
+    const authCookie = cookies.find(c => c.trim().startsWith("moonss_auth="))
+    if (authCookie) {
+      try {
+        const value = decodeURIComponent(authCookie.split("=")[1])
+        const parsed = JSON.parse(value)
+        if (parsed.expiresAt && Date.now() > parsed.expiresAt) {
+          document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
+          router.push("/login")
+          return
+        }
+        setUser(parsed)
+        localStorage.setItem("moonss_session", value)
+        return
+      } catch {
+        // Invalid cookie
+      }
+    }
+    
+    router.push("/login")
   }, [router])
 
   useEffect(() => {
@@ -202,7 +295,12 @@ export default function DashboardPage() {
     }
   }, [user, isAdmin, activeTab, fetchAdminData])
 
-  // Refresh games every 30 seconds when on games tab
+  useEffect(() => {
+    if (user && activeTab === "games") {
+      fetchGames()
+    }
+  }, [user, activeTab, fetchGames])
+
   useEffect(() => {
     if (activeTab === "games" && games.length > 0) {
       const interval = setInterval(refreshGameData, 30000)
@@ -210,7 +308,6 @@ export default function DashboardPage() {
     }
   }, [activeTab, games.length, refreshGameData])
 
-  // Check session validity periodically
   useEffect(() => {
     if (!user) return
     
@@ -229,6 +326,7 @@ export default function DashboardPage() {
         
         if (data.blacklisted || !data.valid) {
           localStorage.removeItem("moonss_session")
+          document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
           router.push("/login")
         }
       } catch {
@@ -236,13 +334,56 @@ export default function DashboardPage() {
       }
     }
 
-    const interval = setInterval(checkSession, 10000)
+    const interval = setInterval(checkSession, 30000)
     return () => clearInterval(interval)
   }, [user, router])
 
   const handleLogout = () => {
     localStorage.removeItem("moonss_session")
+    document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
     router.push("/")
+  }
+
+  // Whitelist verification
+  const handleVerifyWhitelist = async () => {
+    if (!robloxInput.trim()) {
+      setWhitelistError("Please enter your Roblox username")
+      return
+    }
+    
+    setWhitelistLoading(true)
+    setWhitelistError("")
+    setWhitelistSuccess("")
+    
+    try {
+      const res = await fetch("/api/whitelist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: user?.username,
+          robloxUsername: robloxInput.trim()
+        }),
+      })
+      
+      const data = await res.json()
+      
+      if (data.success) {
+        setWhitelistSuccess(data.message)
+        // Update user state with new plan
+        setUser(prev => prev ? { ...prev, plan: data.plan, robloxUsername: data.robloxUsername } : prev)
+        // Update localStorage
+        const session = JSON.parse(localStorage.getItem("moonss_session") || "{}")
+        session.plan = data.plan
+        session.robloxUsername = data.robloxUsername
+        localStorage.setItem("moonss_session", JSON.stringify(session))
+      } else {
+        setWhitelistError(data.error || "Verification failed")
+      }
+    } catch {
+      setWhitelistError("Something went wrong. Please try again.")
+    }
+    
+    setWhitelistLoading(false)
   }
 
   // Admin actions
@@ -322,7 +463,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Fetch game info from Roblox URL
   const fetchGameFromUrl = async () => {
     const match = newGameUrl.match(/roblox\.com\/games\/(\d+)/)
     if (!match) {
@@ -447,7 +587,6 @@ export default function DashboardPage() {
     setFetchedGameData(null)
   }
 
-  // Staff management
   const handleCreateStaff = async () => {
     if (!newStaffUsername || !newStaffPassword || !newStaffEmail) {
       showToast("All fields are required", "error")
@@ -508,6 +647,8 @@ export default function DashboardPage() {
   const sidebarItems = [
     { id: "home" as Tab, label: "Home", icon: Home },
     { id: "games" as Tab, label: "Games", icon: Gamepad2 },
+    { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
+    { id: "tos" as Tab, label: "ToS", icon: FileText },
     { id: "settings" as Tab, label: "Settings", icon: Settings },
     ...(isAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield }] : []),
   ]
@@ -763,7 +904,6 @@ export default function DashboardPage() {
 
       {/* Sidebar */}
       <aside className="w-64 glass-strong border-r border-border/30 flex flex-col">
-        {/* Logo */}
         <div className="p-6 border-b border-border/30">
           <Link href="/" className="flex items-center gap-3">
             <Image
@@ -780,7 +920,6 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 p-4 space-y-1">
           {sidebarItems.map((item) => (
             <button
@@ -799,7 +938,6 @@ export default function DashboardPage() {
           ))}
         </nav>
 
-        {/* User */}
         <div className="p-4 border-t border-border/30">
           <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-secondary/50">
             <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
@@ -815,7 +953,9 @@ export default function DashboardPage() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-foreground truncate">{user.username}</p>
-              <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+              <p className="text-xs text-muted-foreground capitalize">
+                {isAdmin ? user.role : userPlan === "none" ? "No Plan" : userPlan}
+              </p>
             </div>
             <button
               onClick={handleLogout}
@@ -830,7 +970,6 @@ export default function DashboardPage() {
 
       {/* Main */}
       <main className="flex-1 flex flex-col">
-        {/* Header */}
         <header className="h-16 glass-strong border-b border-border/30 flex items-center justify-between px-6">
           <div className="flex items-center gap-4">
             <div className="relative">
@@ -843,6 +982,13 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {userPlan !== "none" && !isAdmin && (
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                userPlan === "premium" ? "bg-gradient-to-r from-primary to-accent text-white" : "bg-secondary text-foreground"
+              }`}>
+                {userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}
+              </span>
+            )}
             <button className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
               <Bell className="h-5 w-5" />
               <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary" />
@@ -850,7 +996,6 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        {/* Content */}
         <div className="flex-1 overflow-auto p-6">
           {/* Home Tab */}
           {activeTab === "home" && (
@@ -860,7 +1005,25 @@ export default function DashboardPage() {
                 <p className="text-muted-foreground mt-1">{"Here's what's happening with Moon Server-Side."}</p>
               </div>
 
-              {/* Stats */}
+              {!hasAccess && (
+                <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-yellow-500">No Active Plan</p>
+                    <p className="text-sm text-yellow-500/80 mt-1">
+                      You need to purchase a plan and verify your Roblox account in the Whitelist tab to access games.
+                    </p>
+                    <button
+                      onClick={() => setActiveTab("whitelist")}
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-semibold text-black hover:bg-yellow-400 transition-all"
+                    >
+                      <Key className="h-4 w-4" />
+                      Go to Whitelist
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                   { label: "Games Available", value: `${games.length}+`, icon: Gamepad2, color: "text-primary" },
@@ -882,7 +1045,6 @@ export default function DashboardPage() {
                 ))}
               </div>
 
-              {/* Quick Actions */}
               <div>
                 <h3 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -897,6 +1059,20 @@ export default function DashboardPage() {
                       <div>
                         <p className="font-semibold text-foreground">Browse Games</p>
                         <p className="text-sm text-muted-foreground">{games.length}+ supported</p>
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("whitelist")}
+                    className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-lg bg-green-500/10 text-green-500 group-hover:bg-green-500 group-hover:text-white transition-all">
+                        <Key className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-foreground">Whitelist</p>
+                        <p className="text-sm text-muted-foreground">Verify your plan</p>
                       </div>
                     </div>
                   </button>
@@ -916,39 +1092,6 @@ export default function DashboardPage() {
                       </div>
                     </button>
                   )}
-                  <a
-                    href="https://discord.gg/YRF26H8bMA"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 rounded-lg bg-[#5865F2]/10 text-[#5865F2] group-hover:bg-[#5865F2] group-hover:text-white transition-all">
-                        <ExternalLink className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-foreground">Join Discord</p>
-                        <p className="text-sm text-muted-foreground">Get support & updates</p>
-                      </div>
-                    </div>
-                  </a>
-                </div>
-              </div>
-
-              {/* Status */}
-              <div className="glass rounded-xl p-5 border border-border/30">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-green-500/10">
-                    <Shield className="h-5 w-5 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-foreground">All Systems Operational</p>
-                    <p className="text-sm text-muted-foreground">Server is running smoothly</p>
-                  </div>
-                  <div className="ml-auto flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-sm text-green-500">Online</span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -960,7 +1103,7 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">Supported Games</h2>
-                  <p className="text-muted-foreground mt-1">Browse all games - player counts update in real-time</p>
+                  <p className="text-muted-foreground mt-1">Browse and join games with Moon Server-Side</p>
                 </div>
                 <button
                   onClick={refreshGameData}
@@ -971,49 +1114,67 @@ export default function DashboardPage() {
                 </button>
               </div>
 
+              {!hasAccess && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 flex items-start gap-3">
+                  <Lock className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-destructive">Games Locked</p>
+                    <p className="text-sm text-destructive/80 mt-1">
+                      You need an active plan to access games. Purchase a gamepass and verify in the Whitelist tab.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {games.map((game) => (
                   <div
                     key={game.id}
-                    className="glass rounded-xl border border-border/30 hover:border-primary/50 transition-all overflow-hidden group"
+                    className={`glass rounded-xl border border-border/30 overflow-hidden group hover:border-primary/50 transition-all relative ${
+                      !hasAccess ? "pointer-events-none" : ""
+                    }`}
                   >
-                    <div className="aspect-video bg-gradient-to-br from-primary/20 to-accent/20 relative">
+                    {!hasAccess && (
+                      <div className="absolute inset-0 z-10 backdrop-blur-md bg-background/50 flex items-center justify-center">
+                        <Lock className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="aspect-video bg-muted relative overflow-hidden">
                       {game.imageUrl ? (
                         <img
                           src={game.imageUrl}
                           alt={game.name}
-                          className="w-full h-full object-cover"
+                          className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+                            !hasAccess ? "blur-lg" : ""
+                          }`}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          <Gamepad2 className="h-12 w-12 text-primary/50" />
+                          <Gamepad2 className="h-12 w-12 text-muted-foreground" />
                         </div>
                       )}
-                      <div className="absolute top-3 right-3">
-                        <span className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full backdrop-blur-sm ${
-                          game.status === "online" ? "bg-green-500/20 text-green-400" : 
-                          game.status === "maintenance" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"
-                        }`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${
-                            game.status === "online" ? "bg-green-400" : 
-                            game.status === "maintenance" ? "bg-yellow-400" : "bg-red-400"
-                          }`} />
-                          {game.status}
-                        </span>
+                      <div className={`absolute top-2 right-2 px-2 py-1 rounded-md text-xs font-semibold ${
+                        game.status === "online" ? "bg-green-500/90 text-white" :
+                        game.status === "maintenance" ? "bg-yellow-500/90 text-black" :
+                        "bg-destructive/90 text-white"
+                      }`}>
+                        {game.status}
                       </div>
                     </div>
                     <div className="p-4">
-                      <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">{game.name}</h3>
+                      <h3 className={`font-semibold text-foreground ${!hasAccess ? "blur-sm" : ""}`}>
+                        {hasAccess ? game.name : "Locked Game"}
+                      </h3>
                       <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                         <Users className="h-3 w-3" />
-                        {formatPlayers(game.players)} playing now
+                        {formatPlayers(game.players)} playing
                       </p>
-                      {game.gameUrl && (
+                      {hasAccess && game.gameUrl && (
                         <a
                           href={game.gameUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-all"
+                          className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all"
                         >
                           <Play className="h-4 w-4" />
                           Join Game
@@ -1026,75 +1187,248 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Settings Tab */}
-          {activeTab === "settings" && (
-            <div className="space-y-6">
+          {/* Whitelist Tab */}
+          {activeTab === "whitelist" && (
+            <div className="space-y-6 max-w-2xl">
               <div>
-                <h2 className="text-2xl font-bold text-foreground">Settings</h2>
-                <p className="text-muted-foreground mt-1">Manage your account preferences</p>
+                <h2 className="text-2xl font-bold text-foreground">Whitelist Verification</h2>
+                <p className="text-muted-foreground mt-1">Link your Roblox account to activate your plan</p>
               </div>
 
-              <div className="max-w-2xl space-y-4">
-                <div className="glass rounded-xl p-6 border border-border/30">
-                  <h3 className="font-semibold text-foreground mb-4">Account Information</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm text-muted-foreground">Username</label>
-                      <p className="text-foreground font-medium">{user.username}</p>
+              {user.robloxUsername ? (
+                <div className="glass rounded-xl border border-green-500/30 p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="h-14 w-14 rounded-full bg-green-500/20 flex items-center justify-center">
+                      <Check className="h-7 w-7 text-green-500" />
                     </div>
                     <div>
-                      <label className="text-sm text-muted-foreground">Email</label>
-                      <p className="text-foreground font-medium">{user.email || "Not set"}</p>
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Account Type</label>
-                      <p className="text-foreground font-medium capitalize flex items-center gap-2">
-                        {user.role}
-                        {isOwner && <Crown className="h-4 w-4 text-primary" />}
-                        {isStaff && <Shield className="h-4 w-4 text-accent" />}
+                      <h3 className="font-semibold text-foreground">Account Verified</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Linked to: <span className="text-primary font-medium">{user.robloxUsername}</span>
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Plan: <span className={`font-semibold ${
+                          userPlan === "premium" ? "text-primary" : userPlan === "standard" ? "text-green-500" : "text-destructive"
+                        }`}>
+                          {userPlan === "none" ? "No Active Plan" : userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}
+                        </span>
                       </p>
                     </div>
                   </div>
-                </div>
-
-                <div className="glass rounded-xl p-6 border border-border/30">
-                  <h3 className="font-semibold text-foreground mb-4">Role Permissions</h3>
-                  <div className="space-y-2 text-sm">
-                    {isOwner && (
-                      <>
-                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> View all users & IPs</p>
-                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Blacklist & unblacklist users</p>
-                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Force logout users</p>
-                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Add, edit & delete games</p>
-                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Create & delete staff accounts</p>
-                      </>
-                    )}
-                    {isStaff && (
-                      <>
-                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> View all users & IPs</p>
-                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Blacklist & unblacklist users</p>
-                        <p className="flex items-center gap-2 text-green-500"><Check className="h-4 w-4" /> Force logout users</p>
-                        <p className="flex items-center gap-2 text-muted-foreground"><X className="h-4 w-4" /> Cannot modify games</p>
-                        <p className="flex items-center gap-2 text-muted-foreground"><X className="h-4 w-4" /> Cannot manage staff</p>
-                      </>
-                    )}
-                    {!isAdmin && (
-                      <p className="text-muted-foreground">Standard user permissions</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="glass rounded-xl p-6 border border-border/30">
-                  <h3 className="font-semibold text-foreground mb-4">Session</h3>
+                  {userPlan === "none" && (
+                    <div className="mt-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+                      <p className="text-sm text-yellow-500">
+                        Your account is linked but you dont have an active gamepass. Please purchase Standard or Premium to access games.
+                      </p>
+                      <a
+                        href="/#pricing"
+                        className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-yellow-500 hover:underline"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        View Pricing
+                      </a>
+                    </div>
+                  )}
                   <button
-                    onClick={handleLogout}
-                    className="inline-flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/20 transition-all"
+                    onClick={handleVerifyWhitelist}
+                    disabled={whitelistLoading}
+                    className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50"
                   >
-                    <LogOut className="h-4 w-4" />
-                    Sign Out
+                    {whitelistLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    Re-verify
                   </button>
                 </div>
+              ) : (
+                <div className="glass rounded-xl border border-border/30 p-6">
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-sm font-bold text-primary-foreground">1</div>
+                      <div>
+                        <h3 className="font-semibold text-foreground">Purchase a Gamepass</h3>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Buy the Standard or Premium gamepass on Roblox. Make sure your inventory is public.
+                        </p>
+                        <div className="flex gap-2 mt-2">
+                          <a
+                            href="https://www.roblox.com/game-pass/1699936888/Standard"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                          >
+                            Standard <ExternalLink className="h-3 w-3" />
+                          </a>
+                          <span className="text-muted-foreground">|</span>
+                          <a
+                            href="https://www.roblox.com/game-pass/1740553477/Premium"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                          >
+                            Premium <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-sm font-bold text-primary-foreground">2</div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-foreground">Enter Your Roblox Username</h3>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Enter your exact Roblox username (case-sensitive) and click verify.
+                        </p>
+                        <div className="mt-3 flex gap-2">
+                          <input
+                            type="text"
+                            value={robloxInput}
+                            onChange={(e) => setRobloxInput(e.target.value)}
+                            placeholder="Your Roblox username"
+                            className="flex-1 rounded-lg border border-border bg-secondary/50 px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          />
+                          <button
+                            onClick={handleVerifyWhitelist}
+                            disabled={whitelistLoading || !robloxInput.trim()}
+                            className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50"
+                          >
+                            {whitelistLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {whitelistError && (
+                    <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                      {whitelistError}
+                    </div>
+                  )}
+
+                  {whitelistSuccess && (
+                    <div className="mt-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-500">
+                      {whitelistSuccess}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ToS Tab */}
+          {activeTab === "tos" && (
+            <div className="space-y-6 max-w-3xl">
+              <div>
+                <h2 className="text-2xl font-bold text-foreground">Terms of Service</h2>
+                <p className="text-muted-foreground mt-1">By using Moon, you agree to follow these rules</p>
               </div>
+
+              {/* Standard ToS */}
+              <div className="glass rounded-xl border border-border/30 p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-10 w-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                    <FileText className="h-5 w-5 text-green-500" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-foreground">Standard Plan Rules</h3>
+                    <p className="text-sm text-muted-foreground">Strict ToS for Standard users</p>
+                  </div>
+                </div>
+                <ul className="space-y-2">
+                  {STANDARD_TOS.map((rule, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm text-muted-foreground">
+                      <span className="text-destructive mt-0.5">*</span>
+                      {rule}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Premium ToS */}
+              <div className="glass rounded-xl border border-primary/30 p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                    <Crown className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-foreground">Premium Plan Rules</h3>
+                    <p className="text-sm text-muted-foreground">Relaxed ToS for Premium users</p>
+                  </div>
+                </div>
+                <ul className="space-y-2">
+                  {PREMIUM_TOS.map((rule, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm text-muted-foreground">
+                      <span className="text-primary mt-0.5">*</span>
+                      {rule}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4">
+                <p className="text-sm text-yellow-500">
+                  <strong>Warning:</strong> Breaking these rules may result in an instant blacklist. If you believe you were blacklisted unfairly, you can appeal in our Discord server.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === "settings" && (
+            <div className="space-y-6 max-w-2xl">
+              <div>
+                <h2 className="text-2xl font-bold text-foreground">Settings</h2>
+                <p className="text-muted-foreground mt-1">Manage your account settings</p>
+              </div>
+
+              <div className="glass rounded-xl border border-border/30 p-6">
+                <h3 className="font-semibold text-foreground mb-4">Account Information</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between py-3 border-b border-border/30">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Username</p>
+                      <p className="font-medium text-foreground">{user.username}</p>
+                    </div>
+                    {isOwner && <Crown className="h-5 w-5 text-primary" />}
+                    {isStaff && <Shield className="h-5 w-5 text-accent" />}
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-border/30">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Email</p>
+                      <p className="font-medium text-foreground">{user.email || "Not set"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-border/30">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Role</p>
+                      <p className="font-medium text-foreground capitalize">{user.role}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-border/30">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Plan</p>
+                      <p className={`font-medium ${
+                        userPlan === "premium" ? "text-primary" : userPlan === "standard" ? "text-green-500" : "text-destructive"
+                      }`}>
+                        {userPlan === "none" ? "No Active Plan" : userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Roblox Account</p>
+                      <p className="font-medium text-foreground">{user.robloxUsername || "Not linked"}</p>
+                    </div>
+                    {user.robloxUsername && <Check className="h-5 w-5 text-green-500" />}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="inline-flex items-center gap-2 rounded-lg bg-destructive px-6 py-3 text-sm font-semibold text-white hover:bg-destructive/90 transition-all"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </button>
             </div>
           )}
 
@@ -1104,31 +1438,29 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">Admin Panel</h2>
-                  <p className="text-muted-foreground mt-1">
-                    {isOwner ? "Full admin access - manage everything" : "Staff access - limited permissions"}
-                  </p>
+                  <p className="text-muted-foreground mt-1">Manage users, blacklist, and games</p>
                 </div>
                 <button
                   onClick={fetchAdminData}
                   disabled={loading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50"
                 >
                   <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                   Refresh
                 </button>
               </div>
 
-              {/* Admin Tabs */}
-              <div className="flex gap-2 border-b border-border/30 pb-4">
+              {/* Admin tabs */}
+              <div className="flex gap-2 border-b border-border/30 pb-2">
                 {[
-                  { id: "users" as const, label: "Users", icon: Users },
-                  { id: "blacklist" as const, label: "Blacklist", icon: UserX },
-                  ...(isOwner ? [{ id: "games" as const, label: "Games", icon: Gamepad2 }] : []),
-                  ...(isOwner ? [{ id: "staff" as const, label: "Staff", icon: Shield }] : []),
+                  { id: "users", label: "Users", icon: Users },
+                  { id: "blacklist", label: "Blacklist", icon: UserX },
+                  ...(isOwner ? [{ id: "games", label: "Games", icon: Gamepad2 }] : []),
+                  ...(isOwner ? [{ id: "staff", label: "Staff", icon: Shield }] : []),
                 ].map((tab) => (
                   <button
                     key={tab.id}
-                    onClick={() => setAdminTab(tab.id)}
+                    onClick={() => setAdminTab(tab.id as typeof adminTab)}
                     className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       adminTab === tab.id
                         ? "bg-primary text-primary-foreground"
@@ -1141,267 +1473,285 @@ export default function DashboardPage() {
                 ))}
               </div>
 
-              {/* Users Tab */}
+              {/* Users */}
               {adminTab === "users" && (
                 <div className="glass rounded-xl border border-border/30 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
-                    <span className="text-sm font-medium text-foreground">Registered Users ({adminUsers.length})</span>
-                  </div>
-                  <div className="divide-y divide-border/30">
-                    {adminUsers.map((u) => (
-                      <div key={u.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
-                        <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
-                          {u.role === "owner" ? (
-                            <Crown className="h-5 w-5 text-primary" />
-                          ) : u.role === "staff" ? (
-                            <Shield className="h-5 w-5 text-accent" />
-                          ) : (
-                            <span className="text-sm font-bold text-primary">
-                              {u.username.charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-foreground">{u.username}</p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              u.role === "owner" ? "bg-primary/20 text-primary" : 
-                              u.role === "staff" ? "bg-accent/20 text-accent" : "bg-muted text-muted-foreground"
-                            }`}>
-                              {u.role}
-                            </span>
-                            {u.isOnline && (
-                              <span className="flex items-center gap-1 text-xs text-green-500">
-                                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                                Online
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border/30 bg-muted/30">
+                          <th className="text-left p-4 text-sm font-semibold text-foreground">User</th>
+                          <th className="text-left p-4 text-sm font-semibold text-foreground">Role</th>
+                          <th className="text-left p-4 text-sm font-semibold text-foreground">Plan</th>
+                          <th className="text-left p-4 text-sm font-semibold text-foreground">IP</th>
+                          <th className="text-left p-4 text-sm font-semibold text-foreground">Status</th>
+                          <th className="text-left p-4 text-sm font-semibold text-foreground">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminUsers.map((u) => (
+                          <tr key={u.id} className="border-b border-border/30 last:border-0">
+                            <td className="p-4">
+                              <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
+                                  {u.role === "owner" ? (
+                                    <Crown className="h-4 w-4 text-primary" />
+                                  ) : u.role === "staff" ? (
+                                    <Shield className="h-4 w-4 text-accent" />
+                                  ) : (
+                                    <span className="text-xs font-bold text-primary">{u.username.charAt(0).toUpperCase()}</span>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-foreground">{u.username}</p>
+                                  <p className="text-xs text-muted-foreground">{u.email}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                u.role === "owner" ? "bg-primary/20 text-primary" :
+                                u.role === "staff" ? "bg-accent/20 text-accent" :
+                                "bg-muted text-muted-foreground"
+                              }`}>
+                                {u.role}
                               </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground">{u.email}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-secondary/50 px-2 py-1 rounded">
-                            <Globe className="h-3 w-3" />
-                            <span className="font-mono text-xs">{u.ip}</span>
-                            <button
-                              onClick={() => copyToClipboard(u.ip, u.id)}
-                              className="p-1 hover:text-foreground transition-colors"
-                            >
-                              {copied === u.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                            </button>
-                          </div>
-                        </div>
-                        {u.role !== "owner" && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleForceLogout(u.username)}
-                              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                              title="Force Logout"
-                            >
-                              <LogOut className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => setBlacklistModal({ open: true, username: u.username })}
-                              className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                              title="Blacklist"
-                            >
-                              <UserX className="h-4 w-4" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {adminUsers.length === 0 && (
-                      <div className="p-8 text-center text-muted-foreground">
-                        No users found
-                      </div>
-                    )}
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                u.plan === "premium" ? "bg-primary/20 text-primary" :
+                                u.plan === "standard" ? "bg-green-500/20 text-green-500" :
+                                "bg-muted text-muted-foreground"
+                              }`}>
+                                {u.plan || "none"}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex items-center gap-2">
+                                <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">{u.ip}</code>
+                                <button
+                                  onClick={() => copyToClipboard(u.ip, `ip-${u.id}`)}
+                                  className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                  {copied === `ip-${u.id}` ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                                u.isOnline ? "bg-green-500/20 text-green-500" : "bg-muted text-muted-foreground"
+                              }`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${u.isOnline ? "bg-green-500" : "bg-muted-foreground"}`} />
+                                {u.isOnline ? "Online" : "Offline"}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              {u.role !== "owner" && (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handleForceLogout(u.username)}
+                                    className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                                    title="Force Logout"
+                                  >
+                                    <LogOut className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setBlacklistModal({ open: true, username: u.username })}
+                                    className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
+                                    title="Blacklist"
+                                  >
+                                    <UserX className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
 
-              {/* Blacklist Tab */}
+              {/* Blacklist */}
               {adminTab === "blacklist" && (
                 <div className="glass rounded-xl border border-border/30 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
-                    <span className="text-sm font-medium text-foreground">Blacklisted Users ({blacklistedUsers.length})</span>
-                  </div>
-                  <div className="divide-y divide-border/30">
-                    {blacklistedUsers.map((u) => (
-                      <div key={u.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
-                        <div className="h-10 w-10 rounded-full bg-destructive/20 flex items-center justify-center">
-                          <UserX className="h-5 w-5 text-destructive" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-foreground">{u.username}</p>
-                          <p className="text-sm text-destructive">{u.reason}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            By {u.blacklistedBy} on {new Date(u.blacklistedAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleUnblacklist(u.username)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium border border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all"
-                        >
-                          Unblacklist
-                        </button>
-                      </div>
-                    ))}
-                    {blacklistedUsers.length === 0 && (
-                      <div className="p-8 text-center text-muted-foreground">
-                        No blacklisted users
-                      </div>
-                    )}
-                  </div>
+                  {blacklistedUsers.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <UserX className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No blacklisted users</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-border/30 bg-muted/30">
+                            <th className="text-left p-4 text-sm font-semibold text-foreground">User</th>
+                            <th className="text-left p-4 text-sm font-semibold text-foreground">Reason</th>
+                            <th className="text-left p-4 text-sm font-semibold text-foreground">Blacklisted By</th>
+                            <th className="text-left p-4 text-sm font-semibold text-foreground">Date</th>
+                            <th className="text-left p-4 text-sm font-semibold text-foreground">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {blacklistedUsers.map((u) => (
+                            <tr key={u.id} className="border-b border-border/30 last:border-0">
+                              <td className="p-4 font-medium text-foreground">{u.username}</td>
+                              <td className="p-4 text-sm text-muted-foreground max-w-xs truncate">{u.reason}</td>
+                              <td className="p-4 text-sm text-muted-foreground">{u.blacklistedBy}</td>
+                              <td className="p-4 text-sm text-muted-foreground">{new Date(u.blacklistedAt).toLocaleDateString()}</td>
+                              <td className="p-4">
+                                <button
+                                  onClick={() => handleUnblacklist(u.username)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-500/10 text-green-500 text-xs font-medium hover:bg-green-500/20 transition-colors"
+                                >
+                                  <Check className="h-3 w-3" />
+                                  Unblacklist
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Games Tab - Owner Only */}
+              {/* Games - Owner Only */}
               {adminTab === "games" && isOwner && (
                 <div className="space-y-4">
                   <div className="flex justify-end">
                     <button
                       onClick={() => setGameModal({ open: true, game: null })}
-                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all"
                     >
                       <Plus className="h-4 w-4" />
                       Add Game
                     </button>
                   </div>
-                  
                   <div className="glass rounded-xl border border-border/30 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
-                      <span className="text-sm font-medium text-foreground">Games ({games.length})</span>
-                    </div>
-                    <div className="divide-y divide-border/30">
-                      {games.map((game) => (
-                        <div key={game.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
-                          <div className="h-12 w-12 rounded-lg bg-muted overflow-hidden">
-                            {game.imageUrl ? (
-                              <img src={game.imageUrl} alt={game.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Gamepad2 className="h-5 w-5 text-muted-foreground" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-foreground">{game.name}</p>
-                            <p className="text-sm text-muted-foreground flex items-center gap-2">
-                              <Users className="h-3 w-3" />
-                              {formatPlayers(game.players)} playing
-                              <span className={`flex items-center gap-1 ${
-                                game.status === "online" ? "text-green-500" : 
-                                game.status === "maintenance" ? "text-yellow-500" : "text-red-500"
-                              }`}>
-                                <span className={`h-1.5 w-1.5 rounded-full ${
-                                  game.status === "online" ? "bg-green-500" : 
-                                  game.status === "maintenance" ? "bg-yellow-500" : "bg-red-500"
-                                }`} />
-                                {game.status}
-                              </span>
-                            </p>
-                          </div>
-                          {game.gameUrl && (
-                            <a
-                              href={game.gameUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                              title="View Game"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </a>
-                          )}
-                          <button
-                            onClick={() => openEditGame(game)}
-                            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                            title="Edit"
-                          >
-                            <Edit3 className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteGame(game.id)}
-                            className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ))}
-                      {games.length === 0 && (
-                        <div className="p-8 text-center text-muted-foreground">
-                          No games added yet
-                        </div>
-                      )}
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-border/30 bg-muted/30">
+                            <th className="text-left p-4 text-sm font-semibold text-foreground">Game</th>
+                            <th className="text-left p-4 text-sm font-semibold text-foreground">Players</th>
+                            <th className="text-left p-4 text-sm font-semibold text-foreground">Status</th>
+                            <th className="text-left p-4 text-sm font-semibold text-foreground">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {games.map((game) => (
+                            <tr key={game.id} className="border-b border-border/30 last:border-0">
+                              <td className="p-4">
+                                <div className="flex items-center gap-3">
+                                  {game.imageUrl ? (
+                                    <img src={game.imageUrl} alt={game.name} className="h-10 w-10 rounded-lg object-cover" />
+                                  ) : (
+                                    <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                                      <Gamepad2 className="h-5 w-5 text-muted-foreground" />
+                                    </div>
+                                  )}
+                                  <span className="font-medium text-foreground">{game.name}</span>
+                                </div>
+                              </td>
+                              <td className="p-4 text-sm text-muted-foreground">{formatPlayers(game.players)}</td>
+                              <td className="p-4">
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                  game.status === "online" ? "bg-green-500/20 text-green-500" :
+                                  game.status === "maintenance" ? "bg-yellow-500/20 text-yellow-500" :
+                                  "bg-destructive/20 text-destructive"
+                                }`}>
+                                  {game.status}
+                                </span>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => openEditGame(game)}
+                                    className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Edit3 className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteGame(game.id)}
+                                    className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Staff Tab - Owner Only */}
+              {/* Staff - Owner Only */}
               {adminTab === "staff" && isOwner && (
                 <div className="space-y-4">
                   <div className="flex justify-end">
                     <button
                       onClick={() => setStaffModal(true)}
-                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all"
                     >
                       <UserPlus className="h-4 w-4" />
-                      Create Staff Account
+                      Create Staff
                     </button>
                   </div>
-                  
                   <div className="glass rounded-xl border border-border/30 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-border/30 bg-secondary/30">
-                      <span className="text-sm font-medium text-foreground">Staff Accounts ({staffAccounts.length})</span>
-                    </div>
-                    <div className="divide-y divide-border/30">
-                      {staffAccounts.map((staff) => (
-                        <div key={staff.id} className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
-                          <div className="h-10 w-10 rounded-full bg-accent/20 flex items-center justify-center">
-                            <Shield className="h-5 w-5 text-accent" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-foreground">{staff.username}</p>
-                              {staff.isOnline && (
-                                <span className="flex items-center gap-1 text-xs text-green-500">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                                  Online
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground">{staff.email}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Created {new Date(staff.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => handleDeleteStaff(staff.username)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-destructive/50 bg-destructive/10 text-destructive hover:bg-destructive/20 transition-all"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      ))}
-                      {staffAccounts.length === 0 && (
-                        <div className="p-8 text-center text-muted-foreground">
-                          No staff accounts created yet
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-border/30 bg-secondary/20 p-4">
-                    <h4 className="font-medium text-foreground mb-2">Staff Permissions</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li className="flex items-center gap-2"><Check className="h-3 w-3 text-green-500" /> View all users and their IPs</li>
-                      <li className="flex items-center gap-2"><Check className="h-3 w-3 text-green-500" /> Blacklist and unblacklist users</li>
-                      <li className="flex items-center gap-2"><Check className="h-3 w-3 text-green-500" /> Force logout users</li>
-                      <li className="flex items-center gap-2"><X className="h-3 w-3 text-red-500" /> Cannot add, edit, or delete games</li>
-                      <li className="flex items-center gap-2"><X className="h-3 w-3 text-red-500" /> Cannot create or manage staff accounts</li>
-                    </ul>
+                    {staffAccounts.length === 0 ? (
+                      <div className="p-8 text-center">
+                        <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground">No staff accounts created</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-border/30 bg-muted/30">
+                              <th className="text-left p-4 text-sm font-semibold text-foreground">Username</th>
+                              <th className="text-left p-4 text-sm font-semibold text-foreground">Email</th>
+                              <th className="text-left p-4 text-sm font-semibold text-foreground">Created</th>
+                              <th className="text-left p-4 text-sm font-semibold text-foreground">Status</th>
+                              <th className="text-left p-4 text-sm font-semibold text-foreground">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {staffAccounts.map((staff) => (
+                              <tr key={staff.id} className="border-b border-border/30 last:border-0">
+                                <td className="p-4 font-medium text-foreground">{staff.username}</td>
+                                <td className="p-4 text-sm text-muted-foreground">{staff.email}</td>
+                                <td className="p-4 text-sm text-muted-foreground">{new Date(staff.createdAt).toLocaleDateString()}</td>
+                                <td className="p-4">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                                    staff.isOnline ? "bg-green-500/20 text-green-500" : "bg-muted text-muted-foreground"
+                                  }`}>
+                                    <span className={`h-1.5 w-1.5 rounded-full ${staff.isOnline ? "bg-green-500" : "bg-muted-foreground"}`} />
+                                    {staff.isOnline ? "Online" : "Offline"}
+                                  </span>
+                                </td>
+                                <td className="p-4">
+                                  <button
+                                    onClick={() => handleDeleteStaff(staff.username)}
+                                    className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
+                                    title="Delete Staff"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

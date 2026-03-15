@@ -61,21 +61,25 @@ export async function POST(request: Request) {
         username: user.username,
         role: user.role,
         email: user.email,
+        plan: user.plan,
+        robloxUsername: user.robloxUsername,
       },
       sessionToken,
       expiresAt,
     })
 
-    // Set HTTP-only cookie for session persistence
+    // Set cookie for session persistence (30 days)
     response.cookies.set("moonss_auth", JSON.stringify({
       username: user.username,
       sessionToken,
       role: user.role,
       id: user.id,
       email: user.email,
+      plan: user.plan,
+      robloxUsername: user.robloxUsername,
       expiresAt,
     }), {
-      httpOnly: false, // Allow JS access for client-side state
+      httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: 30 * 24 * 60 * 60, // 30 days in seconds

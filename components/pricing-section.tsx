@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { Check, Star } from "lucide-react"
+import { Check, Star, X, ExternalLink, Copy, CheckCircle } from "lucide-react"
 
-const DISCORD_URL = "https://discord.gg/YRF26H8bMA"
+const STANDARD_GAMEPASS = "https://www.roblox.com/game-pass/1699936888/Standard"
+const PREMIUM_GAMEPASS = "https://www.roblox.com/game-pass/1740553477/Premium"
 
 const plans = [
   {
@@ -20,7 +21,7 @@ const plans = [
     ],
     cta: "Get Standard",
     highlighted: false,
-    action: "discord" as const,
+    gamepassUrl: STANDARD_GAMEPASS,
   },
   {
     name: "Premium",
@@ -37,7 +38,7 @@ const plans = [
     ],
     cta: "Get Premium",
     highlighted: true,
-    action: "discord" as const,
+    gamepassUrl: PREMIUM_GAMEPASS,
   },
   {
     name: "Free Trial",
@@ -54,16 +55,30 @@ const plans = [
     ],
     cta: "Get Free Trial",
     highlighted: false,
-    action: "soon" as const,
+    gamepassUrl: null,
   },
 ]
 
 export function PricingSection() {
   const [showToast, setShowToast] = useState(false)
+  const [purchaseModal, setPurchaseModal] = useState<{ open: boolean; plan: typeof plans[0] | null }>({ open: false, plan: null })
+  const [copied, setCopied] = useState(false)
 
-  function handleClick() {
-    setShowToast(true)
-    setTimeout(() => setShowToast(false), 2000)
+  function handleClick(plan: typeof plans[0]) {
+    if (plan.gamepassUrl) {
+      setPurchaseModal({ open: true, plan })
+    } else {
+      setShowToast(true)
+      setTimeout(() => setShowToast(false), 2000)
+    }
+  }
+
+  function copyLink() {
+    if (purchaseModal.plan?.gamepassUrl) {
+      navigator.clipboard.writeText(purchaseModal.plan.gamepassUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   return (
@@ -72,6 +87,102 @@ export function PricingSection() {
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[700px] rounded-full bg-primary/5 blur-[140px]" />
       </div>
+
+      {/* Purchase Modal */}
+      {purchaseModal.open && purchaseModal.plan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg glass-strong rounded-2xl border border-primary/30 p-6 animate-in fade-in zoom-in duration-300">
+            <button
+              onClick={() => setPurchaseModal({ open: false, plan: null })}
+              className="absolute top-4 right-4 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center h-14 w-14 rounded-full bg-primary/20 mb-4">
+                <Star className="h-7 w-7 text-primary" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Get {purchaseModal.plan.name}</h2>
+              <p className="text-muted-foreground mt-1">Follow these steps to purchase</p>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              {/* Step 1 */}
+              <div className="flex gap-4 p-4 rounded-xl glass border border-border/30">
+                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary flex items-center justify-center text-sm font-bold text-primary-foreground">
+                  1
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground">Enable Inventory</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Make sure your Roblox inventory is set to <span className="text-primary font-medium">Public</span> in your privacy settings so we can verify your purchase.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className="flex gap-4 p-4 rounded-xl glass border border-border/30">
+                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary flex items-center justify-center text-sm font-bold text-primary-foreground">
+                  2
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground">Purchase the Gamepass</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Click the button below to purchase the <span className="text-primary font-medium">{purchaseModal.plan.name}</span> gamepass on Roblox.
+                  </p>
+                  <div className="flex gap-2 mt-3">
+                    <a
+                      href={purchaseModal.plan.gamepassUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-all"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Open Gamepass
+                    </a>
+                    <button
+                      onClick={copyLink}
+                      className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all"
+                    >
+                      {copied ? <CheckCircle className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                      {copied ? "Copied!" : "Copy Link"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div className="flex gap-4 p-4 rounded-xl glass border border-border/30">
+                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary flex items-center justify-center text-sm font-bold text-primary-foreground">
+                  3
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground">Redeem in Dashboard</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    After purchasing, <span className="text-primary font-medium">login or sign up</span> to Moon Server-Side and go to the <span className="text-primary font-medium">Whitelist</span> tab to redeem your Roblox username.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPurchaseModal({ open: false, plan: null })}
+                className="flex-1 rounded-xl border border-border bg-secondary px-4 py-3 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all"
+              >
+                Close
+              </button>
+              <a
+                href="/signup"
+                className="flex-1 rounded-xl bg-gradient-to-r from-primary to-accent px-4 py-3 text-center text-sm font-semibold text-primary-foreground hover:brightness-110 transition-all"
+              >
+                Sign Up Now
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="relative mx-auto max-w-7xl px-6">
         {/* Header */}
@@ -132,29 +243,15 @@ export function PricingSection() {
               </ul>
 
               <div className="mt-auto">
-                {plan.action === "discord" ? (
-                  <a
-                    href={DISCORD_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`block w-full rounded-xl px-6 py-3.5 text-center text-sm font-semibold transition-all duration-300 ${plan.highlighted
-                        ? "bg-gradient-to-r from-primary to-accent text-primary-foreground hover:shadow-lg hover:shadow-primary/30 hover:brightness-110"
-                        : "border border-border/50 bg-secondary/50 text-foreground hover:bg-secondary hover:border-border"
-                      }`}
-                  >
-                    {plan.cta}
-                  </a>
-                ) : (
-                  <button
-                    onClick={handleClick}
-                    className={`w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition-all duration-300 ${plan.highlighted
-                        ? "bg-gradient-to-r from-primary to-accent text-primary-foreground hover:shadow-lg hover:shadow-primary/30 hover:brightness-110"
-                        : "border border-border/50 bg-secondary/50 text-foreground hover:bg-secondary hover:border-border"
-                      }`}
-                  >
-                    {plan.cta}
-                  </button>
-                )}
+                <button
+                  onClick={() => handleClick(plan)}
+                  className={`w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition-all duration-300 ${plan.highlighted
+                      ? "bg-gradient-to-r from-primary to-accent text-primary-foreground hover:shadow-lg hover:shadow-primary/30 hover:brightness-110"
+                      : "border border-border/50 bg-secondary/50 text-foreground hover:bg-secondary hover:border-border"
+                    }`}
+                >
+                  {plan.cta}
+                </button>
               </div>
             </div>
           ))}

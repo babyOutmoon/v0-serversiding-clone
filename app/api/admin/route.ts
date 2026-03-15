@@ -48,6 +48,8 @@ export async function GET(request: Request) {
         createdAt: u.createdAt,
         lastLogin: u.lastLogin,
         isOnline: u.isOnline,
+        plan: u.plan,
+        robloxUsername: u.robloxUsername,
       }))
       return NextResponse.json({ users: allUsers })
 

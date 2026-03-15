@@ -44,6 +44,8 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString(),
       isOnline: false,
+      robloxUsername: null,
+      plan: "none",
     }
 
     users.set(username.toLowerCase(), newUser)
