@@ -776,7 +776,7 @@ useEffect(() => {
       {/* Blacklist Modal */}
       {blacklistModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-md glass-strong rounded-2xl border border-border/50 p-6">
+          <div className="relative w-full max-w-md bg-card rounded-2xl border border-border/50 p-6">
             <button
               onClick={() => { setBlacklistModal({ open: false, username: "" }); setBlacklistReason(""); }}
               className="absolute top-4 right-4 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
@@ -828,7 +828,7 @@ useEffect(() => {
       {/* Game Modal - Owner Only */}
       {gameModal.open && isOwner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg glass-strong rounded-2xl border border-border/50 p-6">
+          <div className="relative w-full max-w-lg bg-card rounded-2xl border border-border/50 p-6">
             <button
               onClick={closeGameModal}
               className="absolute top-4 right-4 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
@@ -928,7 +928,7 @@ useEffect(() => {
       {/* Staff Modal - Owner Only */}
       {staffModal && isOwner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-md glass-strong rounded-2xl border border-border/50 p-6">
+          <div className="relative w-full max-w-md bg-card rounded-2xl border border-border/50 p-6">
             <button
               onClick={() => { setStaffModal(false); setNewStaffUsername(""); setNewStaffPassword(""); setNewStaffEmail(""); }}
               className="absolute top-4 right-4 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
@@ -1004,7 +1004,7 @@ useEffect(() => {
       )}
 
       {/* Sidebar */}
-      <aside className="w-64 glass-strong border-r border-border/30 flex flex-col">
+      <aside className="w-64 bg-card border-r border-border/30 flex flex-col">
         <div className="p-6 border-b border-border/30">
           <Link href="/" className="flex flex-col items-center gap-2">
             <h1 className="text-3xl font-black tracking-wider">
@@ -1076,7 +1076,7 @@ useEffect(() => {
 
       {/* Main */}
       <main className="flex-1 flex flex-col">
-        <header className="h-16 glass-strong border-b border-border/30 flex items-center justify-between px-6">
+        <header className="h-16 bg-card border-b border-border/30 flex items-center justify-between px-6">
           <div className="flex items-center gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

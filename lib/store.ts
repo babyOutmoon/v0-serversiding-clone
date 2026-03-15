@@ -67,15 +67,8 @@ export type Session = {
 }
 export const sessions = new Map<string, Session>()
 
-// Games store
-export const games = new Map<string, Game>([
-  ["1", { id: "1", name: "Blox Fruits", players: 1200000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/2753915549", placeId: "2753915549" }],
-  ["2", { id: "2", name: "Pet Simulator X", players: 890000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/6284583030", placeId: "6284583030" }],
-  ["3", { id: "3", name: "Brookhaven", players: 650000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/4924922222", placeId: "4924922222" }],
-  ["4", { id: "4", name: "Adopt Me", players: 520000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/920587237", placeId: "920587237" }],
-  ["5", { id: "5", name: "Murder Mystery 2", players: 340000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/142823291", placeId: "142823291" }],
-  ["6", { id: "6", name: "Jailbreak", players: 280000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/606849621", placeId: "606849621" }],
-])
+// Games store - empty by default, populated via webhooks
+export const games = new Map<string, Game>()
 
 // Gamepass IDs
 export const STANDARD_GAMEPASS_ID = "1699936888"
