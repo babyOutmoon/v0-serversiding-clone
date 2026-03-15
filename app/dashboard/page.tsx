@@ -317,26 +317,38 @@ export default function DashboardPage() {
     const checkSession = async () => {
       try {
         const session = JSON.parse(localStorage.getItem("moonss_session") || "{}")
+        
+        // First check client-side expiration
+        if (session.expiresAt && Date.now() > session.expiresAt) {
+          localStorage.removeItem("moonss_session")
+          document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
+          router.push("/login")
+          return
+        }
+        
+        // Only check blacklist status on server (don't rely on session token validation)
         const res = await fetch("/api/auth/check", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             username: session.username,
-            sessionToken: session.sessionToken 
+            sessionToken: session.sessionToken
           }),
         })
         const data = await res.json()
         
-        if (data.blacklisted || !data.valid) {
+        // Only log out if explicitly blacklisted
+        if (data.blacklisted) {
           localStorage.removeItem("moonss_session")
           document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
           router.push("/login")
         }
+        // Don't log out for session mismatch - server may have restarted
       } catch {
-        // Ignore errors
+        // Ignore errors - network issues shouldn't log user out
       }
     }
-
+    
     const interval = setInterval(checkSession, 30000)
     return () => clearInterval(interval)
   }, [user, router])
