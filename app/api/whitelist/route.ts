@@ -51,11 +51,21 @@ export async function POST(request: Request) {
       )
     }
 
-    // Check if user exists
-    const user = users.get(username.toLowerCase())
+    // Check if user exists - try both exact and lowercase
+    let user = users.get(username.toLowerCase())
+    if (!user) {
+      // Try to find by iterating (in case of case mismatch)
+      for (const [key, u] of users) {
+        if (u.username.toLowerCase() === username.toLowerCase()) {
+          user = u
+          break
+        }
+      }
+    }
+    
     if (!user) {
       return NextResponse.json(
-        { error: "User not found" },
+        { error: "Please log out and log back in, then try again" },
         { status: 404 }
       )
     }

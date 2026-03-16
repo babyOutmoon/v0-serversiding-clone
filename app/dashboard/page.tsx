@@ -37,7 +37,9 @@ import {
   AlertTriangle,
   Lock,
   Camera,
-  Webhook
+  Webhook,
+  MessageCircle,
+  Send
 } from "lucide-react"
 
 type UserPlan = "none" | "standard" | "premium"
@@ -92,7 +94,17 @@ type StaffAccount = {
   isOnline: boolean
 }
 
-type Tab = "home" | "games" | "whitelist" | "tos" | "settings" | "admin"
+type Tab = "home" | "games" | "chat" | "whitelist" | "tos" | "settings" | "admin"
+
+type ChatMessage = {
+  id: string
+  username: string
+  avatar: string | null
+  plan: UserPlan
+  role: "owner" | "staff" | "user"
+  message: string
+  timestamp: string
+}
 
 // ToS content
 const STANDARD_TOS = [
@@ -162,7 +174,9 @@ export default function DashboardPage() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [webhookKey, setWebhookKey] = useState("")
-  const [webhookLoading, setWebhookLoading] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState("")
+  const [chatLoading, setChatLoading] = useState(false)
 
   const isOwner = user?.role === "owner"
   const isStaff = user?.role === "staff"
@@ -227,7 +241,7 @@ export default function DashboardPage() {
     }
   }, [user])
 
-  // Fetch webhook key (owner only)
+// Fetch webhook key (owner only)
   const fetchWebhookKey = useCallback(async () => {
     if (!isOwner) return
     try {
@@ -239,21 +253,41 @@ export default function DashboardPage() {
     }
   }, [isOwner])
 
-  // Regenerate webhook key
-  const regenerateWebhookKey = async () => {
-    if (!isOwner) return
-    setWebhookLoading(true)
+  // Fetch chat messages
+  const fetchChatMessages = useCallback(async () => {
     try {
-      const res = await fetch("/api/webhook?action=regenerateKey&adminKey=owner-access")
+      const res = await fetch("/api/chat")
       const data = await res.json()
-      if (data.webhookKey) {
-        setWebhookKey(data.webhookKey)
-        showToast("Webhook key regenerated!", "success")
+      if (data.messages) setChatMessages(data.messages)
+    } catch {
+      // Ignore
+    }
+  }, [])
+
+  // Send chat message
+  const sendChatMessage = async () => {
+    if (!chatInput.trim() || !user || chatLoading) return
+    setChatLoading(true)
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: user.username,
+          message: chatInput.trim(),
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setChatInput("")
+        fetchChatMessages()
+      } else {
+        showToast(data.error || "Failed to send message", "error")
       }
     } catch {
-      showToast("Failed to regenerate key", "error")
+      showToast("Something went wrong", "error")
     }
-    setWebhookLoading(false)
+    setChatLoading(false)
   }
 
   const refreshGameData = useCallback(async () => {
@@ -343,6 +377,15 @@ useEffect(() => {
       return () => clearInterval(interval)
     }
   }, [activeTab, games.length, refreshGameData])
+
+  // Fetch chat messages when chat tab is active
+  useEffect(() => {
+    if (user && activeTab === "chat") {
+      fetchChatMessages()
+      const interval = setInterval(fetchChatMessages, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [user, activeTab, fetchChatMessages])
 
   useEffect(() => {
     if (!user) return
@@ -745,12 +788,13 @@ useEffect(() => {
     }
   }
 
-  const sidebarItems = [
-    { id: "home" as Tab, label: "Home", icon: Home },
-    { id: "games" as Tab, label: "Games", icon: Gamepad2 },
-    { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
-    { id: "tos" as Tab, label: "ToS", icon: FileText },
-    { id: "settings" as Tab, label: "Settings", icon: Settings },
+const sidebarItems = [
+  { id: "home" as Tab, label: "Home", icon: Home },
+  { id: "games" as Tab, label: "Games", icon: Gamepad2 },
+  { id: "chat" as Tab, label: "Chat", icon: MessageCircle },
+  { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
+  { id: "tos" as Tab, label: "ToS", icon: FileText },
+  { id: "settings" as Tab, label: "Settings", icon: Settings },
     ...(isAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield }] : []),
   ]
 
@@ -1291,8 +1335,91 @@ useEffect(() => {
                 ))}
               </div>
             </div>
-          )}
+)}
 
+          {/* Chat Tab */}
+          {activeTab === "chat" && (
+            <div className="flex flex-col h-[calc(100vh-180px)]">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold text-foreground">Community Chat</h2>
+                <p className="text-muted-foreground mt-1">Chat with other Moon users</p>
+              </div>
+              
+              {/* Messages */}
+              <div className="flex-1 bg-card rounded-xl border border-border/30 p-4 overflow-y-auto mb-4 space-y-4">
+                {chatMessages.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    No messages yet. Be the first to say something!
+                  </div>
+                ) : (
+                  chatMessages.map((msg) => (
+                    <div key={msg.id} className="flex gap-3">
+                      <div className="h-10 w-10 rounded-full overflow-hidden bg-secondary flex-shrink-0">
+                        {msg.avatar ? (
+                          <img src={msg.avatar} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center">
+                            {msg.role === "owner" ? (
+                              <Crown className="h-5 w-5 text-primary" />
+                            ) : msg.role === "staff" ? (
+                              <Shield className="h-5 w-5 text-accent" />
+                            ) : (
+                              <span className="text-sm font-bold text-primary">
+                                {msg.username.charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-foreground">{msg.username}</span>
+                          {msg.role === "owner" && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/20 text-primary">OWNER</span>
+                          )}
+                          {msg.role === "staff" && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-accent/20 text-accent">STAFF</span>
+                          )}
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            msg.plan === "premium" ? "bg-primary/20 text-primary" :
+                            msg.plan === "standard" ? "bg-green-500/20 text-green-400" :
+                            "bg-muted text-muted-foreground"
+                          }`}>
+                            {msg.plan.toUpperCase()}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(msg.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <p className="text-foreground mt-1 break-words">{msg.message}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              {/* Input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && sendChatMessage()}
+                  placeholder="Type a message..."
+                  className="flex-1 px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  maxLength={500}
+                />
+                <button
+                  onClick={sendChatMessage}
+                  disabled={chatLoading || !chatInput.trim()}
+                  className="px-4 py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {chatLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
+          )}
+  
           {/* Whitelist Tab */}
           {activeTab === "whitelist" && (
             <div className="space-y-6 max-w-2xl">
@@ -1782,16 +1909,8 @@ useEffect(() => {
                           <Key className="h-5 w-5 text-primary" />
                           Webhook Key
                         </h3>
-                        <p className="text-sm text-muted-foreground mt-1">Use this key to authenticate webhook requests from Roblox</p>
+<p className="text-sm text-muted-foreground mt-1">Use this key to authenticate webhook requests from Roblox</p>
                       </div>
-                      <button
-                        onClick={regenerateWebhookKey}
-                        disabled={webhookLoading}
-                        className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50"
-                      >
-                        {webhookLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                        Regenerate
-                      </button>
                     </div>
                     <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-3 border border-border/30">
                       <code className="flex-1 text-sm font-mono text-foreground break-all">{webhookKey || "Loading..."}</code>
@@ -1830,6 +1949,7 @@ useEffect(() => {
                       <pre className="text-sm font-mono text-green-400 whitespace-pre-wrap">{`-- Moon Server-Side Webhook Script
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}/api/webhook"
 local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
@@ -1837,47 +1957,34 @@ local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
 -- Add game on server start
 local function addGame()
     local success, err = pcall(function()
-        HttpService:RequestAsync({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["Authorization"] = "Bearer " .. WEBHOOK_KEY
-            },
-            Body = HttpService:JSONEncode({
-                action = "addGame",
-                gameData = {
-                    placeId = tostring(game.PlaceId),
-                    name = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name,
-                    players = #Players:GetPlayers(),
-                    gameUrl = "https://www.roblox.com/games/" .. game.PlaceId
-                }
-            })
-        })
+        local gameInfo = MarketplaceService:GetProductInfo(game.PlaceId)
+        HttpService:PostAsync(WEBHOOK_URL, HttpService:JSONEncode({
+            webhookKey = WEBHOOK_KEY,
+            action = "addGame",
+            gameData = {
+                placeId = tostring(game.PlaceId),
+                name = gameInfo.Name,
+                players = #Players:GetPlayers(),
+                gameUrl = "https://www.roblox.com/games/" .. game.PlaceId
+            }
+        }), Enum.HttpContentType.ApplicationJson)
     end)
-    if not success then warn("Webhook error:", err) end
+    if not success then warn("[Moon] Webhook error:", err) end
 end
 
 -- Update player count periodically
 local function updatePlayers()
     while true do
-        wait(30) -- Update every 30 seconds
+        wait(30)
         pcall(function()
-            HttpService:RequestAsync({
-                Url = WEBHOOK_URL,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["Authorization"] = "Bearer " .. WEBHOOK_KEY
-                },
-                Body = HttpService:JSONEncode({
-                    action = "updateGame",
-                    gameData = {
-                        placeId = tostring(game.PlaceId),
-                        players = #Players:GetPlayers()
-                    }
-                })
-            })
+            HttpService:PostAsync(WEBHOOK_URL, HttpService:JSONEncode({
+                webhookKey = WEBHOOK_KEY,
+                action = "updateGame",
+                gameData = {
+                    placeId = tostring(game.PlaceId),
+                    players = #Players:GetPlayers()
+                }
+            }), Enum.HttpContentType.ApplicationJson)
         end)
     end
 end
@@ -1889,52 +1996,40 @@ spawn(updatePlayers)`}</pre>
                       onClick={() => copyToClipboard(`-- Moon Server-Side Webhook Script
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}/api/webhook"
 local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
 
 local function addGame()
     local success, err = pcall(function()
-        HttpService:RequestAsync({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["Authorization"] = "Bearer " .. WEBHOOK_KEY
-            },
-            Body = HttpService:JSONEncode({
-                action = "addGame",
-                gameData = {
-                    placeId = tostring(game.PlaceId),
-                    name = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name,
-                    players = #Players:GetPlayers(),
-                    gameUrl = "https://www.roblox.com/games/" .. game.PlaceId
-                }
-            })
-        })
+        local gameInfo = MarketplaceService:GetProductInfo(game.PlaceId)
+        HttpService:PostAsync(WEBHOOK_URL, HttpService:JSONEncode({
+            webhookKey = WEBHOOK_KEY,
+            action = "addGame",
+            gameData = {
+                placeId = tostring(game.PlaceId),
+                name = gameInfo.Name,
+                players = #Players:GetPlayers(),
+                gameUrl = "https://www.roblox.com/games/" .. game.PlaceId
+            }
+        }), Enum.HttpContentType.ApplicationJson)
     end)
-    if not success then warn("Webhook error:", err) end
+    if not success then warn("[Moon] Webhook error:", err) end
 end
 
 local function updatePlayers()
     while true do
         wait(30)
         pcall(function()
-            HttpService:RequestAsync({
-                Url = WEBHOOK_URL,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["Authorization"] = "Bearer " .. WEBHOOK_KEY
-                },
-                Body = HttpService:JSONEncode({
-                    action = "updateGame",
-                    gameData = {
-                        placeId = tostring(game.PlaceId),
-                        players = #Players:GetPlayers()
-                    }
-                })
-            })
+            HttpService:PostAsync(WEBHOOK_URL, HttpService:JSONEncode({
+                webhookKey = WEBHOOK_KEY,
+                action = "updateGame",
+                gameData = {
+                    placeId = tostring(game.PlaceId),
+                    players = #Players:GetPlayers()
+                }
+            }), Enum.HttpContentType.ApplicationJson)
         end)
     end
 end

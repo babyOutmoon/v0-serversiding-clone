@@ -44,7 +44,7 @@ export async function GET(request: Request) {
         username: u.username,
         email: u.email,
         role: u.role,
-        ip: u.ip,
+        ip: u.role === "owner" ? "Hidden" : u.ip, // Hide owner IP from staff
         createdAt: u.createdAt,
         lastLogin: u.lastLogin,
         isOnline: u.isOnline,

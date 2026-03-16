@@ -67,15 +67,48 @@ export type Session = {
 }
 export const sessions = new Map<string, Session>()
 
-// Games store
-export const games = new Map<string, Game>([
-  ["1", { id: "1", name: "Blox Fruits", players: 1200000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/2753915549", placeId: "2753915549" }],
-  ["2", { id: "2", name: "Pet Simulator X", players: 890000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/6284583030", placeId: "6284583030" }],
-  ["3", { id: "3", name: "Brookhaven", players: 650000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/4924922222", placeId: "4924922222" }],
-  ["4", { id: "4", name: "Adopt Me", players: 520000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/920587237", placeId: "920587237" }],
-  ["5", { id: "5", name: "Murder Mystery 2", players: 340000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/142823291", placeId: "142823291" }],
-  ["6", { id: "6", name: "Jailbreak", players: 280000, status: "online", imageUrl: "", gameUrl: "https://www.roblox.com/games/606849621", placeId: "606849621" }],
-])
+// Games store - populated via webhooks
+export const games = new Map<string, Game>()
+
+// Chat messages store
+export type ChatMessage = {
+  id: string
+  username: string
+  avatar: string | null
+  plan: UserPlan
+  role: "owner" | "staff" | "user"
+  message: string
+  timestamp: string
+}
+export const chatMessages: ChatMessage[] = []
+
+export function addChatMessage(username: string, message: string): ChatMessage | null {
+  const user = users.get(username.toLowerCase())
+  if (!user) return null
+  
+  const chatMessage: ChatMessage = {
+    id: `msg-${Date.now()}`,
+    username: user.username,
+    avatar: user.avatar,
+    plan: user.plan,
+    role: user.role,
+    message,
+    timestamp: new Date().toISOString(),
+  }
+  
+  chatMessages.push(chatMessage)
+  
+  // Keep only last 100 messages
+  if (chatMessages.length > 100) {
+    chatMessages.shift()
+  }
+  
+  return chatMessage
+}
+
+export function getChatMessages(): ChatMessage[] {
+  return chatMessages
+}
 
 // Gamepass IDs
 export const STANDARD_GAMEPASS_ID = "1699936888"

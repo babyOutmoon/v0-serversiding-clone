@@ -1,32 +1,35 @@
 import { NextResponse } from "next/server"
 import { addGame, getAllGames, deleteGame, games } from "@/lib/store"
 
-// Webhook secret key for authentication
-// In production, store this in environment variables
-let webhookKey = "moon-webhook-" + Math.random().toString(36).substring(2, 15)
+// Fixed webhook key - no regeneration needed
+const WEBHOOK_KEY = "moon-webhook-v2-secure-key-2024"
 
 export function getWebhookKey() {
-  return webhookKey
-}
-
-export function regenerateWebhookKey() {
-  webhookKey = "moon-webhook-" + Math.random().toString(36).substring(2, 15)
-  return webhookKey
+  return WEBHOOK_KEY
 }
 
 // POST - Receive game data from Roblox webhook
 export async function POST(request: Request) {
   try {
+    // Get auth from header or body
     const authHeader = request.headers.get("Authorization")
-    const providedKey = authHeader?.replace("Bearer ", "")
+    let providedKey = authHeader?.replace("Bearer ", "")
+
+    const body = await request.json()
+    
+    // Also accept key in body for Roblox compatibility
+    if (!providedKey && body.webhookKey) {
+      providedKey = body.webhookKey
+    }
 
     // Validate webhook key
-    if (!providedKey || providedKey !== webhookKey) {
+    if (!providedKey || providedKey !== WEBHOOK_KEY) {
+      console.log("[v0] Invalid webhook key:", providedKey)
       return NextResponse.json({ error: "Invalid webhook key" }, { status: 401 })
     }
 
-    const body = await request.json()
     const { action, gameData } = body
+    console.log("[v0] Webhook action:", action, "gameData:", gameData)
 
     switch (action) {
       case "addGame": {
@@ -41,7 +44,11 @@ export async function POST(request: Request) {
         const exists = existingGames.find(g => g.placeId === String(placeId))
         
         if (exists) {
-          return NextResponse.json({ error: "Game already exists", game: exists }, { status: 409 })
+          // Update existing game instead
+          exists.players = players || exists.players
+          exists.name = name || exists.name
+          games.set(exists.id, exists)
+          return NextResponse.json({ success: true, message: "Game updated", game: exists })
         }
 
         const newGame = addGame({
@@ -53,6 +60,7 @@ export async function POST(request: Request) {
           placeId: String(placeId),
         })
 
+        console.log("[v0] Game added:", newGame)
         return NextResponse.json({ success: true, message: "Game added", game: newGame })
       }
 
@@ -72,13 +80,12 @@ export async function POST(request: Request) {
         }
 
         // Update game data
-        const updatedGame = { ...game }
-        if (players !== undefined) updatedGame.players = players
-        if (status !== undefined) updatedGame.status = status
+        if (players !== undefined) game.players = players
+        if (status !== undefined) game.status = status
         
-        games.set(game.id, updatedGame)
+        games.set(game.id, game)
 
-        return NextResponse.json({ success: true, message: "Game updated", game: updatedGame })
+        return NextResponse.json({ success: true, message: "Game updated", game })
       }
 
       case "removeGame": {
@@ -105,7 +112,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Invalid action. Use: addGame, updateGame, removeGame" }, { status: 400 })
     }
   } catch (error) {
-    console.error("Webhook error:", error)
+    console.error("[v0] Webhook error:", error)
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 }
@@ -116,34 +123,12 @@ export async function GET(request: Request) {
   const action = searchParams.get("action")
   const adminKey = searchParams.get("adminKey")
 
-  // Simple admin verification - in production use proper auth
+  // Simple admin verification
   if (action === "getKey" && adminKey === "owner-access") {
     return NextResponse.json({ 
-      webhookKey,
+      webhookKey: WEBHOOK_KEY,
       webhookUrl: "/api/webhook",
-      instructions: {
-        addGame: {
-          method: "POST",
-          headers: { "Authorization": "Bearer YOUR_WEBHOOK_KEY", "Content-Type": "application/json" },
-          body: { action: "addGame", gameData: { placeId: "123456", name: "Game Name", players: 1000, imageUrl: "optional", gameUrl: "optional" } }
-        },
-        updateGame: {
-          method: "POST", 
-          headers: { "Authorization": "Bearer YOUR_WEBHOOK_KEY", "Content-Type": "application/json" },
-          body: { action: "updateGame", gameData: { placeId: "123456", players: 2000, status: "online|offline|maintenance" } }
-        },
-        removeGame: {
-          method: "POST",
-          headers: { "Authorization": "Bearer YOUR_WEBHOOK_KEY", "Content-Type": "application/json" },
-          body: { action: "removeGame", gameData: { placeId: "123456" } }
-        }
-      }
     })
-  }
-
-  if (action === "regenerateKey" && adminKey === "owner-access") {
-    const newKey = regenerateWebhookKey()
-    return NextResponse.json({ success: true, webhookKey: newKey })
   }
 
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
