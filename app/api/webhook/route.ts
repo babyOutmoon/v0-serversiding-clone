@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { addGame, getAllGames, deleteGame, games } from "@/lib/store"
+import { addGame, getAllGames, deleteGame, games, getPendingScripts, markScriptExecuted } from "@/lib/store"
 
 // Fixed webhook key - no regeneration needed
 const WEBHOOK_KEY = "moon-webhook-v2-secure-key-2024"
@@ -24,12 +24,10 @@ export async function POST(request: Request) {
 
     // Validate webhook key
     if (!providedKey || providedKey !== WEBHOOK_KEY) {
-      console.log("[v0] Invalid webhook key:", providedKey)
       return NextResponse.json({ error: "Invalid webhook key" }, { status: 401 })
     }
 
     const { action, gameData } = body
-    console.log("[v0] Webhook action:", action, "gameData:", gameData)
 
     switch (action) {
       case "addGame": {
@@ -47,6 +45,7 @@ export async function POST(request: Request) {
           // Update existing game instead
           exists.players = players || exists.players
           exists.name = name || exists.name
+          exists.status = "online"
           games.set(exists.id, exists)
           return NextResponse.json({ success: true, message: "Game updated", game: exists })
         }
@@ -60,7 +59,6 @@ export async function POST(request: Request) {
           placeId: String(placeId),
         })
 
-        console.log("[v0] Game added:", newGame)
         return NextResponse.json({ success: true, message: "Game added", game: newGame })
       }
 
@@ -108,8 +106,40 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, message: "Game removed" })
       }
 
+      // Game polls for pending scripts
+      case "getScripts": {
+        const { placeId } = gameData || {}
+        
+        if (!placeId) {
+          return NextResponse.json({ error: "placeId is required" }, { status: 400 })
+        }
+
+        const pendingScripts = getPendingScripts(String(placeId))
+        
+        return NextResponse.json({ 
+          success: true, 
+          scripts: pendingScripts.map(s => ({
+            id: s.id,
+            script: s.script,
+          }))
+        })
+      }
+
+      // Game reports script execution result
+      case "scriptExecuted": {
+        const { executionId, success } = gameData || {}
+        
+        if (!executionId) {
+          return NextResponse.json({ error: "executionId is required" }, { status: 400 })
+        }
+
+        markScriptExecuted(executionId, success !== false)
+        
+        return NextResponse.json({ success: true, message: "Execution recorded" })
+      }
+
       default:
-        return NextResponse.json({ error: "Invalid action. Use: addGame, updateGame, removeGame" }, { status: 400 })
+        return NextResponse.json({ error: "Invalid action" }, { status: 400 })
     }
   } catch (error) {
     console.error("[v0] Webhook error:", error)

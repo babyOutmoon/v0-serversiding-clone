@@ -254,6 +254,73 @@ export function formatPlayers(count: number): string {
   return String(count)
 }
 
+// Script execution queue
+export type ScriptExecution = {
+  id: string
+  placeId: string
+  script: string
+  executedBy: string
+  createdAt: string
+  status: "pending" | "executed" | "failed"
+}
+
+// Queue for pending scripts per game (placeId -> scripts)
+export const scriptQueue = new Map<string, ScriptExecution[]>()
+
+// Execution history
+export const executionHistory: ScriptExecution[] = []
+
+export function queueScript(placeId: string, script: string, executedBy: string): ScriptExecution {
+  const execution: ScriptExecution = {
+    id: `exec-${Date.now()}`,
+    placeId,
+    script,
+    executedBy,
+    createdAt: new Date().toISOString(),
+    status: "pending",
+  }
+  
+  // Add to queue for this game
+  if (!scriptQueue.has(placeId)) {
+    scriptQueue.set(placeId, [])
+  }
+  scriptQueue.get(placeId)!.push(execution)
+  
+  // Add to history
+  executionHistory.unshift(execution)
+  if (executionHistory.length > 50) executionHistory.pop()
+  
+  return execution
+}
+
+export function getPendingScripts(placeId: string): ScriptExecution[] {
+  return scriptQueue.get(placeId) || []
+}
+
+export function markScriptExecuted(executionId: string, success: boolean): boolean {
+  // Find in queue
+  for (const [placeId, scripts] of scriptQueue) {
+    const index = scripts.findIndex(s => s.id === executionId)
+    if (index !== -1) {
+      scripts[index].status = success ? "executed" : "failed"
+      // Remove from queue after execution
+      scripts.splice(index, 1)
+      if (scripts.length === 0) scriptQueue.delete(placeId)
+      
+      // Update history
+      const historyItem = executionHistory.find(e => e.id === executionId)
+      if (historyItem) historyItem.status = success ? "executed" : "failed"
+      
+      return true
+    }
+  }
+  return false
+}
+
+export function getExecutionHistory(): ScriptExecution[] {
+  return executionHistory
+}
+
 // Extract place ID from Roblox URL
 export function extractPlaceId(url: string): string | null {
   const match = url.match(/roblox\.com\/games\/(\d+)/)

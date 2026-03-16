@@ -39,7 +39,9 @@ import {
   Camera,
   Webhook,
   MessageCircle,
-  Send
+  Send,
+  Terminal,
+  Code
 } from "lucide-react"
 
 type UserPlan = "none" | "standard" | "premium"
@@ -94,7 +96,16 @@ type StaffAccount = {
   isOnline: boolean
 }
 
-type Tab = "home" | "games" | "chat" | "whitelist" | "tos" | "settings" | "admin"
+type Tab = "home" | "games" | "executor" | "chat" | "whitelist" | "tos" | "settings" | "admin"
+
+type ScriptExecution = {
+  id: string
+  placeId: string
+  script: string
+  executedBy: string
+  createdAt: string
+  status: "pending" | "executed" | "failed"
+}
 
 type ChatMessage = {
   id: string
@@ -176,8 +187,12 @@ export default function DashboardPage() {
   const [webhookKey, setWebhookKey] = useState("")
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState("")
-  const [chatLoading, setChatLoading] = useState(false)
-
+const [chatLoading, setChatLoading] = useState(false)
+  const [selectedGameForExec, setSelectedGameForExec] = useState<string>("")
+  const [scriptCode, setScriptCode] = useState("")
+  const [executorLoading, setExecutorLoading] = useState(false)
+  const [executionHistory, setExecutionHistory] = useState<ScriptExecution[]>([])
+  
   const isOwner = user?.role === "owner"
   const isStaff = user?.role === "staff"
   const isAdmin = isOwner || isStaff
@@ -287,9 +302,55 @@ export default function DashboardPage() {
     } catch {
       showToast("Something went wrong", "error")
     }
-    setChatLoading(false)
+setChatLoading(false)
   }
 
+  // Fetch execution history
+  const fetchExecutionHistory = useCallback(async () => {
+    try {
+      const res = await fetch("/api/executor")
+      const data = await res.json()
+      if (data.history) setExecutionHistory(data.history)
+    } catch {
+      // Ignore
+    }
+  }, [])
+
+  // Execute script
+  const executeScript = async () => {
+    if (!scriptCode.trim() || !selectedGameForExec || !user || executorLoading) return
+    
+    // Check plan
+    if (userPlan === "none" && !isAdmin) {
+      showToast("You need an active plan to use the executor", "error")
+      return
+    }
+
+    setExecutorLoading(true)
+    try {
+      const res = await fetch("/api/executor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: user.username,
+          placeId: selectedGameForExec,
+          script: scriptCode.trim(),
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast("Script queued for execution!", "success")
+        setScriptCode("")
+        fetchExecutionHistory()
+      } else {
+        showToast(data.error || "Failed to execute script", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+    setExecutorLoading(false)
+  }
+  
   const refreshGameData = useCallback(async () => {
     if (games.length === 0) return
     
@@ -385,8 +446,17 @@ useEffect(() => {
       const interval = setInterval(fetchChatMessages, 5000)
       return () => clearInterval(interval)
     }
-  }, [user, activeTab, fetchChatMessages])
+}, [user, activeTab, fetchChatMessages])
 
+  // Fetch execution history when executor tab is active
+  useEffect(() => {
+    if (user && activeTab === "executor") {
+      fetchExecutionHistory()
+      const interval = setInterval(fetchExecutionHistory, 10000)
+      return () => clearInterval(interval)
+    }
+  }, [user, activeTab, fetchExecutionHistory])
+  
   useEffect(() => {
     if (!user) return
     
@@ -791,6 +861,7 @@ useEffect(() => {
 const sidebarItems = [
   { id: "home" as Tab, label: "Home", icon: Home },
   { id: "games" as Tab, label: "Games", icon: Gamepad2 },
+  { id: "executor" as Tab, label: "Executor", icon: Terminal },
   { id: "chat" as Tab, label: "Chat", icon: MessageCircle },
   { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
   { id: "tos" as Tab, label: "ToS", icon: FileText },
