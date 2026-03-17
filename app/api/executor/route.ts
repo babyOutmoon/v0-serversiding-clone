@@ -1,13 +1,23 @@
 import { NextResponse } from "next/server"
-import { users, games, addScriptLog, getScriptLogs } from "@/lib/store"
+import { 
+  users, 
+  addScriptLog, 
+  getScriptLogs, 
+  queueScript,
+  getPendingScriptsForUser,
+  clearPendingScriptsForUser,
+  getRegisteredRobloxUsers,
+  ROBLOX_WEBHOOK_KEY
+} from "@/lib/store"
 
+// POST - Queue a script for execution
 export async function POST(request: Request) {
   try {
-    const { username, script, gameId } = await request.json()
+    const { username, script } = await request.json()
 
-    if (!username || !script || !gameId) {
+    if (!username || !script) {
       return NextResponse.json(
-        { error: "Username, script, and gameId are required" },
+        { error: "Username and script are required" },
         { status: 400 }
       )
     }
@@ -37,27 +47,21 @@ export async function POST(request: Request) {
       )
     }
 
-    // Find game
-    const game = games.get(gameId)
-    if (!game) {
-      return NextResponse.json(
-        { error: "Game not found" },
-        { status: 404 }
-      )
-    }
+    // Queue the script for this Roblox user
+    queueScript(user.robloxUsername, script)
 
     // Log the script execution
     addScriptLog(
       user.username,
       user.robloxUsername,
       script,
-      gameId,
-      game.name
+      "auto",
+      "Auto-detect"
     )
 
     return NextResponse.json({
       success: true,
-      message: "Script executed successfully",
+      message: "Script queued for execution",
       robloxUsername: user.robloxUsername,
     })
 
@@ -69,9 +73,39 @@ export async function POST(request: Request) {
   }
 }
 
+// GET - For admins to view logs, or for Roblox to poll scripts
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const admin = searchParams.get("admin")
+  const webhookKey = searchParams.get("webhookKey")
+  const robloxUser = searchParams.get("robloxUser")
+  const action = searchParams.get("action")
+
+  // Roblox script polling for pending scripts
+  if (webhookKey && robloxUser) {
+    if (webhookKey !== ROBLOX_WEBHOOK_KEY) {
+      return NextResponse.json({ error: "Invalid webhook key" }, { status: 403 })
+    }
+
+    // Check if this roblox user is whitelisted
+    const whitelisted = getRegisteredRobloxUsers()
+    if (!whitelisted.includes(robloxUser)) {
+      return NextResponse.json({ scripts: [], whitelisted: false })
+    }
+
+    // Get pending scripts for this user
+    const scripts = getPendingScriptsForUser(robloxUser)
+    
+    // Clear the scripts after sending (they've been fetched)
+    if (action === "fetch") {
+      clearPendingScriptsForUser(robloxUser)
+    }
+
+    return NextResponse.json({ 
+      scripts: scripts.map(s => s.script),
+      whitelisted: true 
+    })
+  }
 
   // Only admins can view logs
   if (!admin) {

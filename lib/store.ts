@@ -100,6 +100,47 @@ export function getScriptLogs(): ScriptLog[] {
   return [...scriptLogs]
 }
 
+// Pending scripts queue (robloxUsername -> scripts to execute)
+export type PendingScript = {
+  id: string
+  robloxUsername: string
+  script: string
+  timestamp: string
+}
+
+export const pendingScripts: PendingScript[] = []
+
+export function queueScript(robloxUsername: string, script: string): PendingScript {
+  const pending: PendingScript = {
+    id: `script-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+    robloxUsername,
+    script,
+    timestamp: new Date().toISOString(),
+  }
+  
+  pendingScripts.push(pending)
+  
+  // Keep only last 100 pending scripts
+  if (pendingScripts.length > 100) {
+    pendingScripts.shift()
+  }
+  
+  return pending
+}
+
+export function getPendingScriptsForUser(robloxUsername: string): PendingScript[] {
+  return pendingScripts.filter(s => s.robloxUsername.toLowerCase() === robloxUsername.toLowerCase())
+}
+
+export function clearPendingScriptsForUser(robloxUsername: string): void {
+  const toRemove = pendingScripts
+    .map((s, i) => s.robloxUsername.toLowerCase() === robloxUsername.toLowerCase() ? i : -1)
+    .filter(i => i !== -1)
+    .reverse()
+  
+  toRemove.forEach(i => pendingScripts.splice(i, 1))
+}
+
 // Users store
 export const users = new Map<string, User>([
   [OWNER.username.toLowerCase(), OWNER],

