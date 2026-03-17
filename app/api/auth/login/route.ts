@@ -33,8 +33,17 @@ export async function POST(request: Request) {
       )
     }
 
-    // Find user
-    const user = users.get(username.toLowerCase())
+    // Find user - try both exact and case-insensitive
+    let user = users.get(username.toLowerCase())
+    if (!user) {
+      // Try to find by iterating (in case of case mismatch)
+      for (const [, u] of users) {
+        if (u.username.toLowerCase() === username.toLowerCase()) {
+          user = u
+          break
+        }
+      }
+    }
     
     if (!user || user.password !== password) {
       return NextResponse.json(

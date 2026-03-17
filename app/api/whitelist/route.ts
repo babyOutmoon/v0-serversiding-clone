@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // Find user
+    // Find user - try multiple approaches
     let user = users.get(username.toLowerCase())
     if (!user) {
       for (const [, u] of users) {
@@ -48,11 +48,25 @@ export async function POST(request: Request) {
       }
     }
     
+    // If user still not found, create a temporary entry (server may have restarted)
     if (!user) {
-      return NextResponse.json(
-        { error: "Please log out and log back in, then try again" },
-        { status: 404 }
-      )
+      // Create a basic user entry so they can continue
+      const newUser = {
+        id: `user-${Date.now()}`,
+        username,
+        password: "", // They're already logged in via session
+        email: "",
+        role: "user" as const,
+        ip: "0.0.0.0",
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        isOnline: true,
+        robloxUsername: null,
+        plan: "none" as const,
+        avatar: null,
+      }
+      users.set(username.toLowerCase(), newUser)
+      user = newUser
     }
 
     // If key is provided, redeem it first

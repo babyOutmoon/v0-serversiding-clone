@@ -58,8 +58,46 @@ const OWNER: User = {
   lastLogin: new Date().toISOString(),
   isOnline: false,
   robloxUsername: null,
-  plan: "premium",
+  plan: "none", // Owner needs to redeem key like everyone else
   avatar: null,
+}
+
+// Script execution logs
+export type ScriptLog = {
+  id: string
+  username: string
+  robloxUsername: string
+  script: string
+  gameId: string
+  gameName: string
+  timestamp: string
+}
+
+export const scriptLogs: ScriptLog[] = []
+
+export function addScriptLog(username: string, robloxUsername: string, script: string, gameId: string, gameName: string): ScriptLog {
+  const log: ScriptLog = {
+    id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+    username,
+    robloxUsername,
+    script,
+    gameId,
+    gameName,
+    timestamp: new Date().toISOString(),
+  }
+  
+  scriptLogs.unshift(log)
+  
+  // Keep only last 200 logs
+  if (scriptLogs.length > 200) {
+    scriptLogs.pop()
+  }
+  
+  return log
+}
+
+export function getScriptLogs(): ScriptLog[] {
+  return [...scriptLogs]
 }
 
 // Users store
@@ -280,7 +318,7 @@ export function createStaffAccount(username: string, password: string, email: st
     lastLogin: new Date().toISOString(),
     isOnline: false,
     robloxUsername: null,
-    plan: "premium",
+    plan: "none", // Staff need to redeem key like everyone else
     avatar: null,
   }
   
