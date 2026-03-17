@@ -106,6 +106,15 @@ type ChatMessage = {
   timestamp: string
 }
 
+type WhitelistKey = {
+  key: string
+  plan: UserPlan
+  createdAt: string
+  createdBy: string
+  usedBy: string | null
+  usedAt: string | null
+}
+
 // ToS content
 const STANDARD_TOS = [
   "Do NOT use external Executors (E.g: Exser, Polaria)",
@@ -150,7 +159,7 @@ export default function DashboardPage() {
   const [blacklistedUsers, setBlacklistedUsers] = useState<BlacklistedUser[]>([])
   const [games, setGames] = useState<Game[]>([])
   const [staffAccounts, setStaffAccounts] = useState<StaffAccount[]>([])
-  const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "webhooks" | "staff">("users")
+  const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "keys" | "webhooks" | "staff">("users")
   const [loading, setLoading] = useState(false)
   
   // Whitelist state
@@ -177,6 +186,9 @@ export default function DashboardPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState("")
   const [chatLoading, setChatLoading] = useState(false)
+  const [whitelistKeys, setWhitelistKeys] = useState<WhitelistKey[]>([])
+  const [keyInput, setKeyInput] = useState("")
+  const [robloxWebhookUrl, setRobloxWebhookUrl] = useState("")
 
   const isOwner = user?.role === "owner"
   const isStaff = user?.role === "staff"
@@ -201,7 +213,7 @@ export default function DashboardPage() {
     setTimeout(() => setCopied(null), 2000)
   }
 
-  const fetchAdminData = useCallback(async () => {
+const fetchAdminData = useCallback(async () => {
     if (!user || !isAdmin) return
     setLoading(true)
     try {
@@ -213,17 +225,19 @@ export default function DashboardPage() {
       
       if (isOwner) {
         requests.push(fetch(`/api/admin?action=staff&admin=${user.username}`))
+        requests.push(fetch(`/api/admin?action=keys&admin=${user.username}`))
+        requests.push(fetch(`/api/admin?action=webhookInfo&admin=${user.username}`))
       }
       
       const responses = await Promise.all(requests)
-      const [usersData, blacklistData, gamesData, staffData] = await Promise.all(
-        responses.map(r => r.json())
-      )
+      const results = await Promise.all(responses.map(r => r.json()))
       
-      if (usersData.users) setAdminUsers(usersData.users)
-      if (blacklistData.blacklist) setBlacklistedUsers(blacklistData.blacklist)
-      if (gamesData.games) setGames(gamesData.games)
-      if (staffData?.staff) setStaffAccounts(staffData.staff)
+      if (results[0]?.users) setAdminUsers(results[0].users)
+      if (results[1]?.blacklist) setBlacklistedUsers(results[1].blacklist)
+      if (results[2]?.games) setGames(results[2].games)
+      if (isOwner && results[3]?.staff) setStaffAccounts(results[3].staff)
+      if (isOwner && results[4]?.keys) setWhitelistKeys(results[4].keys)
+      if (isOwner && results[5]?.webhookUrl) setRobloxWebhookUrl(results[5].webhookUrl)
     } catch (err) {
       console.error("Failed to fetch admin data", err)
     }
@@ -287,9 +301,93 @@ export default function DashboardPage() {
     } catch {
       showToast("Something went wrong", "error")
     }
-    setChatLoading(false)
+setChatLoading(false)
   }
 
+  // Generate whitelist key
+  const generateKey = async (plan: "standard" | "premium") => {
+    if (!user || !isOwner) return
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generateKey",
+          adminUsername: user.username,
+          plan,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast(`${plan.charAt(0).toUpperCase() + plan.slice(1)} key generated!`, "success")
+        fetchAdminData()
+      } else {
+        showToast(data.error || "Failed to generate key", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+  }
+
+  // Delete whitelist key
+  const deleteKey = async (key: string) => {
+    if (!user || !isOwner) return
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "deleteKey",
+          adminUsername: user.username,
+          key,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast("Key deleted", "success")
+        fetchAdminData()
+      } else {
+        showToast(data.error || "Failed to delete key", "error")
+      }
+    } catch {
+      showToast("Something went wrong", "error")
+    }
+  }
+
+  // Redeem key (for users)
+  const redeemKey = async () => {
+    if (!user || !keyInput.trim()) return
+    setWhitelistLoading(true)
+    setWhitelistError("")
+    setWhitelistSuccess("")
+    try {
+      const res = await fetch("/api/whitelist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: user.username,
+          key: keyInput.trim(),
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setWhitelistSuccess(data.message || "Plan activated!")
+        setKeyInput("")
+        // Update local user state
+        setUser(prev => prev ? { ...prev, plan: data.plan } : null)
+        // Also update in localStorage
+        const session = JSON.parse(localStorage.getItem("moonss_session") || "{}")
+        session.plan = data.plan
+        localStorage.setItem("moonss_session", JSON.stringify(session))
+      } else {
+        setWhitelistError(data.error || "Failed to redeem key")
+      }
+    } catch {
+      setWhitelistError("Something went wrong")
+    }
+    setWhitelistLoading(false)
+  }
+  
   const refreshGameData = useCallback(async () => {
     if (games.length === 0) return
     
@@ -488,8 +586,8 @@ useEffect(() => {
     }
   }
 
-  // Whitelist verification
-  const handleVerifyWhitelist = async () => {
+// Link Roblox account
+  const handleLinkRoblox = async () => {
     if (!robloxInput.trim()) {
       setWhitelistError("Please enter your Roblox username")
       return
@@ -512,16 +610,16 @@ useEffect(() => {
       const data = await res.json()
       
       if (data.success) {
-        setWhitelistSuccess(data.message)
-        // Update user state with new plan
-        setUser(prev => prev ? { ...prev, plan: data.plan, robloxUsername: data.robloxUsername } : prev)
+        setWhitelistSuccess(data.message || "Roblox account linked!")
+        // Update user state
+        setUser(prev => prev ? { ...prev, robloxUsername: data.robloxUsername } : prev)
         // Update localStorage
         const session = JSON.parse(localStorage.getItem("moonss_session") || "{}")
-        session.plan = data.plan
         session.robloxUsername = data.robloxUsername
         localStorage.setItem("moonss_session", JSON.stringify(session))
+        setRobloxInput("")
       } else {
-        setWhitelistError(data.error || "Verification failed")
+        setWhitelistError(data.error || "Failed to link account")
       }
     } catch {
       setWhitelistError("Something went wrong. Please try again.")
@@ -1420,131 +1518,139 @@ const sidebarItems = [
             </div>
           )}
   
-          {/* Whitelist Tab */}
+{/* Whitelist Tab */}
           {activeTab === "whitelist" && (
             <div className="space-y-6 max-w-2xl">
               <div>
-                <h2 className="text-2xl font-bold text-foreground">Whitelist Verification</h2>
-                <p className="text-muted-foreground mt-1">Link your Roblox account to activate your plan</p>
+                <h2 className="text-2xl font-bold text-foreground">Whitelist</h2>
+                <p className="text-muted-foreground mt-1">Link your Roblox account and redeem your key</p>
               </div>
 
-              {user.robloxUsername ? (
-                <div className="glass rounded-xl border border-green-500/30 p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-14 w-14 rounded-full bg-green-500/20 flex items-center justify-center">
+              {/* Status Card */}
+              <div className="glass rounded-xl border border-border/30 p-6">
+                <div className="flex items-center gap-4">
+                  <div className={`h-14 w-14 rounded-full flex items-center justify-center ${
+                    user.robloxUsername && userPlan !== "none" 
+                      ? "bg-green-500/20" 
+                      : user.robloxUsername 
+                        ? "bg-yellow-500/20" 
+                        : "bg-muted"
+                  }`}>
+                    {user.robloxUsername && userPlan !== "none" ? (
                       <Check className="h-7 w-7 text-green-500" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground">Account Verified</h3>
+                    ) : user.robloxUsername ? (
+                      <AlertTriangle className="h-7 w-7 text-yellow-500" />
+                    ) : (
+                      <Link2 className="h-7 w-7 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-foreground">
+                      {user.robloxUsername && userPlan !== "none" 
+                        ? "Fully Verified" 
+                        : user.robloxUsername 
+                          ? "Roblox Linked - Need Key" 
+                          : "Not Linked"}
+                    </h3>
+                    {user.robloxUsername && (
                       <p className="text-sm text-muted-foreground">
-                        Linked to: <span className="text-primary font-medium">{user.robloxUsername}</span>
+                        Roblox: <span className="text-primary font-medium">{user.robloxUsername}</span>
                       </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Plan: <span className={`font-semibold ${
-                          userPlan === "premium" ? "text-primary" : userPlan === "standard" ? "text-green-500" : "text-destructive"
-                        }`}>
-                          {userPlan === "none" ? "No Active Plan" : userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}
-                        </span>
-                      </p>
-                    </div>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Plan: <span className={`font-semibold ${
+                        userPlan === "premium" ? "text-primary" : userPlan === "standard" ? "text-green-500" : "text-destructive"
+                      }`}>
+                        {userPlan === "none" ? "No Active Plan" : userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}
+                      </span>
+                    </p>
                   </div>
-                  {userPlan === "none" && (
-                    <div className="mt-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
-                      <p className="text-sm text-yellow-500">
-                        Your account is linked but you dont have an active gamepass. Please purchase Standard or Premium to access games.
-                      </p>
-                      <a
-                        href="/#pricing"
-                        className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-yellow-500 hover:underline"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        View Pricing
-                      </a>
-                    </div>
-                  )}
-                  <button
-                    onClick={handleVerifyWhitelist}
-                    disabled={whitelistLoading}
-                    className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50"
-                  >
-                    {whitelistLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                    Re-verify
-                  </button>
                 </div>
-              ) : (
-                <div className="glass rounded-xl border border-border/30 p-6">
-                  <div className="space-y-4">
-                    <div className="flex items-start gap-3">
-                      <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-sm font-bold text-primary-foreground">1</div>
-                      <div>
-                        <h3 className="font-semibold text-foreground">Purchase a Gamepass</h3>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Buy the Standard or Premium gamepass on Roblox. Make sure your inventory is public.
-                        </p>
-                        <div className="flex gap-2 mt-2">
-                          <a
-                            href="https://www.roblox.com/game-pass/1699936888/Standard"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                          >
-                            Standard <ExternalLink className="h-3 w-3" />
-                          </a>
-                          <span className="text-muted-foreground">|</span>
-                          <a
-                            href="https://www.roblox.com/game-pass/1740553477/Premium"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                          >
-                            Premium <ExternalLink className="h-3 w-3" />
-                          </a>
-                        </div>
-                      </div>
-                    </div>
+              </div>
 
-                    <div className="flex items-start gap-3">
-                      <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-sm font-bold text-primary-foreground">2</div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-foreground">Enter Your Roblox Username</h3>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Enter your exact Roblox username (case-sensitive) and click verify.
-                        </p>
-                        <div className="mt-3 flex gap-2">
-                          <input
-                            type="text"
-                            value={robloxInput}
-                            onChange={(e) => setRobloxInput(e.target.value)}
-                            placeholder="Your Roblox username"
-                            className="flex-1 rounded-lg border border-border bg-secondary/50 px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                          />
-                          <button
-                            onClick={handleVerifyWhitelist}
-                            disabled={whitelistLoading || !robloxInput.trim()}
-                            className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50"
-                          >
-                            {whitelistLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+              {/* Step 1: Link Roblox */}
+              <div className="glass rounded-xl border border-border/30 p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                    user.robloxUsername ? "bg-green-500/20 text-green-500" : "bg-primary/20 text-primary"
+                  }`}>
+                    {user.robloxUsername ? <Check className="h-4 w-4" /> : "1"}
                   </div>
+                  <h3 className="font-semibold text-foreground">Link Roblox Account</h3>
+                </div>
+                
+                {user.robloxUsername ? (
+                  <p className="text-sm text-green-500">Linked to: {user.robloxUsername}</p>
+                ) : (
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={robloxInput}
+                      onChange={(e) => setRobloxInput(e.target.value)}
+                      placeholder="Enter your Roblox username"
+                      className="w-full px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    />
+                    <button
+                      onClick={handleLinkRoblox}
+                      disabled={whitelistLoading || !robloxInput.trim()}
+                      className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50"
+                    >
+                      {whitelistLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : "Link Account"}
+                    </button>
+                  </div>
+                )}
+              </div>
 
-                  {whitelistError && (
-                    <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                      {whitelistError}
-                    </div>
-                  )}
+              {/* Step 2: Redeem Key */}
+              <div className="glass rounded-xl border border-border/30 p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                    userPlan !== "none" ? "bg-green-500/20 text-green-500" : "bg-primary/20 text-primary"
+                  }`}>
+                    {userPlan !== "none" ? <Check className="h-4 w-4" /> : "2"}
+                  </div>
+                  <h3 className="font-semibold text-foreground">Redeem Key</h3>
+                </div>
+                
+                {userPlan !== "none" ? (
+                  <p className="text-sm text-green-500">
+                    {userPlan.charAt(0).toUpperCase() + userPlan.slice(1)} plan active
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={keyInput}
+                      onChange={(e) => setKeyInput(e.target.value.toUpperCase())}
+                      placeholder="Enter your key (e.g., MOON-PREMIUM-...)"
+                      className="w-full px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono"
+                    />
+                    <button
+                      onClick={redeemKey}
+                      disabled={whitelistLoading || !keyInput.trim()}
+                      className="w-full py-3 rounded-lg bg-green-500 text-white font-semibold hover:bg-green-600 transition-all disabled:opacity-50"
+                    >
+                      {whitelistLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : "Redeem Key"}
+                    </button>
+                  </div>
+                )}
+              </div>
 
-                  {whitelistSuccess && (
-                    <div className="mt-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-500">
-                      {whitelistSuccess}
-                    </div>
-                  )}
+              {/* Messages */}
+              {whitelistError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+                  <p className="text-sm text-destructive">{whitelistError}</p>
+                </div>
+              )}
+              {whitelistSuccess && (
+                <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4">
+                  <p className="text-sm text-green-500">{whitelistSuccess}</p>
                 </div>
               )}
             </div>
           )}
+
+
 
           {/* ToS Tab */}
           {activeTab === "tos" && (
@@ -1733,10 +1839,11 @@ const sidebarItems = [
 
               {/* Admin tabs */}
               <div className="flex gap-2 border-b border-border/30 pb-2">
-                {[
+{[
                   { id: "users", label: "Users", icon: Users },
                   { id: "blacklist", label: "Blacklist", icon: UserX },
-                  ...(isOwner ? [{ id: "webhooks", label: "Webhooks", icon: Webhook }] : []),
+                  ...(isOwner ? [{ id: "keys", label: "Keys", icon: Key }] : []),
+                  ...(isOwner ? [{ id: "webhooks", label: "Webhooks", icon: Globe }] : []),
                   ...(isOwner ? [{ id: "staff", label: "Staff", icon: Shield }] : []),
                 ].map((tab) => (
                   <button
@@ -1895,22 +2002,144 @@ const sidebarItems = [
                         </tbody>
                       </table>
                     </div>
-                  )}
-                </div>
+)}
+              </div>
               )}
 
-              {/* Webhooks - Owner Only */}
+              {/* Keys - Owner Only */}
+              {adminTab === "keys" && isOwner && (
+                <div className="space-y-6">
+                  {/* Generate Keys */}
+                  <div className="glass rounded-xl border border-border/30 p-6">
+                    <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                      <Plus className="h-5 w-5 text-primary" />
+                      Generate Keys
+                    </h3>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => generateKey("standard")}
+                        className="flex-1 py-3 rounded-lg bg-green-500/20 border border-green-500/30 text-green-400 font-semibold hover:bg-green-500/30 transition-all"
+                      >
+                        Generate Standard Key
+                      </button>
+                      <button
+                        onClick={() => generateKey("premium")}
+                        className="flex-1 py-3 rounded-lg bg-primary/20 border border-primary/30 text-primary font-semibold hover:bg-primary/30 transition-all"
+                      >
+                        Generate Premium Key
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Keys List */}
+                  <div className="glass rounded-xl border border-border/30 overflow-hidden">
+                    <div className="p-4 border-b border-border/30">
+                      <h3 className="font-semibold text-foreground">All Keys ({whitelistKeys.length})</h3>
+                    </div>
+                    <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                      <table className="w-full">
+                        <thead className="sticky top-0 bg-muted/50">
+                          <tr className="border-b border-border/30">
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Key</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Plan</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Status</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Used By</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {whitelistKeys.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                                No keys generated yet
+                              </td>
+                            </tr>
+                          ) : (
+                            whitelistKeys.map((k) => (
+                              <tr key={k.key} className="border-b border-border/30 last:border-0">
+                                <td className="p-3">
+                                  <div className="flex items-center gap-2">
+                                    <code className="text-xs font-mono text-foreground bg-muted px-2 py-1 rounded">{k.key}</code>
+                                    <button
+                                      onClick={() => copyToClipboard(k.key, k.key)}
+                                      className="p-1 text-muted-foreground hover:text-foreground"
+                                    >
+                                      {copied === k.key ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="p-3">
+                                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                    k.plan === "premium" ? "bg-primary/20 text-primary" : "bg-green-500/20 text-green-400"
+                                  }`}>
+                                    {k.plan.toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="p-3">
+                                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                    k.usedBy ? "bg-muted text-muted-foreground" : "bg-green-500/20 text-green-400"
+                                  }`}>
+                                    {k.usedBy ? "USED" : "AVAILABLE"}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-sm text-muted-foreground">
+                                  {k.usedBy || "-"}
+                                </td>
+                                <td className="p-3">
+                                  <button
+                                    onClick={() => deleteKey(k.key)}
+                                    className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+  
+{/* Webhooks - Owner Only */}
               {adminTab === "webhooks" && isOwner && (
                 <div className="space-y-6">
+                  {/* Roblox Whitelist Webhook - Most Important */}
+                  <div className="glass rounded-xl border border-green-500/30 p-6 bg-green-500/5">
+                    <div className="mb-4">
+                      <h3 className="font-semibold text-foreground flex items-center gap-2">
+                        <Users className="h-5 w-5 text-green-500" />
+                        Roblox Whitelist Webhook
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">Use this URL in your Roblox script to get the list of whitelisted users</p>
+                    </div>
+                    <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-3 border border-border/30">
+                      <code className="flex-1 text-sm font-mono text-foreground break-all">
+                        {typeof window !== "undefined" ? `${window.location.origin}${robloxWebhookUrl}` : robloxWebhookUrl || "Loading..."}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(typeof window !== "undefined" ? `${window.location.origin}${robloxWebhookUrl}` : robloxWebhookUrl, "roblox-webhook")}
+                        className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                      >
+                        {copied === "roblox-webhook" ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <div className="mt-4 p-3 rounded-lg bg-muted/30 border border-border/30">
+                      <p className="text-xs text-muted-foreground mb-2">Response format (JSON array of Roblox usernames):</p>
+                      <code className="text-xs font-mono text-green-400">["Sofiane_OG", "mohsayt", "natilololool", "roblox_user123"]</code>
+                    </div>
+                  </div>
+
                   <div className="glass rounded-xl border border-border/30 p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="font-semibold text-foreground flex items-center gap-2">
-                          <Key className="h-5 w-5 text-primary" />
-                          Webhook Key
-                        </h3>
-<p className="text-sm text-muted-foreground mt-1">Use this key to authenticate webhook requests from Roblox</p>
-                      </div>
+                    <div className="mb-4">
+                      <h3 className="font-semibold text-foreground flex items-center gap-2">
+                        <Key className="h-5 w-5 text-primary" />
+                        Game Webhook Key
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">Use this key to authenticate webhook requests from Roblox games</p>
                     </div>
                     <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-3 border border-border/30">
                       <code className="flex-1 text-sm font-mono text-foreground break-all">{webhookKey || "Loading..."}</code>

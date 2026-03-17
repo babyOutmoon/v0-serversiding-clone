@@ -13,7 +13,12 @@ import {
   createStaffAccount,
   getStaffAccounts,
   deleteStaffAccount,
-  type Game
+  generateWhitelistKey,
+  getAllWhitelistKeys,
+  deleteWhitelistKey,
+  ROBLOX_WEBHOOK_KEY,
+  type Game,
+  type UserPlan
 } from "@/lib/store"
 
 // Check if user is owner or staff
@@ -70,6 +75,21 @@ export async function GET(request: Request) {
         createdAt: s.createdAt,
         isOnline: s.isOnline,
       })) })
+
+    case "keys":
+      if (!isOwner(adminUsername)) {
+        return NextResponse.json({ error: "Owner only" }, { status: 403 })
+      }
+      return NextResponse.json({ keys: getAllWhitelistKeys() })
+
+    case "webhookInfo":
+      if (!isOwner(adminUsername)) {
+        return NextResponse.json({ error: "Owner only" }, { status: 403 })
+      }
+      return NextResponse.json({ 
+        webhookKey: ROBLOX_WEBHOOK_KEY,
+        webhookUrl: "/api/whitelist?webhookKey=" + ROBLOX_WEBHOOK_KEY
+      })
 
     default:
       return NextResponse.json({ error: "Invalid action" }, { status: 400 })
@@ -204,6 +224,35 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "Staff not found" }, { status: 400 })
         }
         return NextResponse.json({ success: true, message: "Staff deleted" })
+      }
+
+      case "generateKey": {
+        // Only owner can generate keys
+        if (!isOwner(adminUsername)) {
+          return NextResponse.json({ error: "Owner only" }, { status: 403 })
+        }
+        const { plan } = data
+        if (!plan || !["standard", "premium"].includes(plan)) {
+          return NextResponse.json({ error: "Valid plan required (standard or premium)" }, { status: 400 })
+        }
+        const newKey = generateWhitelistKey(plan as UserPlan, adminUsername)
+        return NextResponse.json({ success: true, key: newKey })
+      }
+
+      case "deleteKey": {
+        // Only owner can delete keys
+        if (!isOwner(adminUsername)) {
+          return NextResponse.json({ error: "Owner only" }, { status: 403 })
+        }
+        const { key } = data
+        if (!key) {
+          return NextResponse.json({ error: "Key required" }, { status: 400 })
+        }
+        const success = deleteWhitelistKey(key)
+        if (!success) {
+          return NextResponse.json({ error: "Key not found" }, { status: 400 })
+        }
+        return NextResponse.json({ success: true, message: "Key deleted" })
       }
 
       default:

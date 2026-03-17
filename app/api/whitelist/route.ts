@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server"
-import { users, updateUserPlan, STANDARD_GAMEPASS_ID, PREMIUM_GAMEPASS_ID, type UserPlan } from "@/lib/store"
+import { 
+  users, 
+  updateUserPlan, 
+  updateUserRobloxUsername,
+  redeemWhitelistKey,
+  getRegisteredRobloxUsers,
+  ROBLOX_WEBHOOK_KEY
+} from "@/lib/store"
 
-// Verify if a user owns a gamepass
-async function checkGamepassOwnership(robloxUserId: string, gamepassId: string): Promise<boolean> {
+// Get Roblox user ID from username (to verify it exists)
+async function verifyRobloxUsername(username: string): Promise<boolean> {
   try {
-    // Use Roblox inventory API to check ownership
-    const res = await fetch(
-      `https://inventory.roblox.com/v1/users/${robloxUserId}/items/GamePass/${gamepassId}`,
-      { next: { revalidate: 0 } }
-    )
+    const res = await fetch("https://users.roblox.com/v1/usernames/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usernames: [username], excludeBannedUsers: true }),
+    })
     
     if (!res.ok) return false
     
@@ -19,43 +26,21 @@ async function checkGamepassOwnership(robloxUserId: string, gamepassId: string):
   }
 }
 
-// Get Roblox user ID from username
-async function getRobloxUserId(username: string): Promise<string | null> {
-  try {
-    const res = await fetch("https://users.roblox.com/v1/usernames/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ usernames: [username], excludeBannedUsers: true }),
-    })
-    
-    if (!res.ok) return null
-    
-    const data = await res.json()
-    if (data.data && data.data.length > 0) {
-      return String(data.data[0].id)
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
 export async function POST(request: Request) {
   try {
-    const { username, robloxUsername } = await request.json()
+    const { username, robloxUsername, key } = await request.json()
 
-    if (!username || !robloxUsername) {
+    if (!username) {
       return NextResponse.json(
-        { error: "Username and Roblox username are required" },
+        { error: "Username is required" },
         { status: 400 }
       )
     }
 
-    // Check if user exists - try both exact and lowercase
+    // Find user
     let user = users.get(username.toLowerCase())
     if (!user) {
-      // Try to find by iterating (in case of case mismatch)
-      for (const [key, u] of users) {
+      for (const [, u] of users) {
         if (u.username.toLowerCase() === username.toLowerCase()) {
           user = u
           break
@@ -70,57 +55,59 @@ export async function POST(request: Request) {
       )
     }
 
-    // Check if Roblox username is already taken by another user
-    for (const [, u] of users) {
-      if (u.robloxUsername?.toLowerCase() === robloxUsername.toLowerCase() && u.username.toLowerCase() !== username.toLowerCase()) {
+    // If key is provided, redeem it first
+    if (key) {
+      const result = redeemWhitelistKey(key, username)
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 400 })
+      }
+      
+      // Update user plan
+      updateUserPlan(username, result.plan!, user.robloxUsername)
+      
+      return NextResponse.json({
+        success: true,
+        plan: result.plan,
+        message: `${result.plan!.charAt(0).toUpperCase() + result.plan!.slice(1)} plan activated!`
+      })
+    }
+
+    // If robloxUsername is provided, link it
+    if (robloxUsername) {
+      // Check if Roblox username is already taken by another user
+      for (const [, u] of users) {
+        if (u.robloxUsername?.toLowerCase() === robloxUsername.toLowerCase() && 
+            u.username.toLowerCase() !== username.toLowerCase()) {
+          return NextResponse.json(
+            { error: "This Roblox username is already linked to another account" },
+            { status: 400 }
+          )
+        }
+      }
+
+      // Verify Roblox username exists
+      const exists = await verifyRobloxUsername(robloxUsername)
+      if (!exists) {
         return NextResponse.json(
-          { error: "This Roblox username is already linked to another account" },
-          { status: 400 }
+          { error: "Roblox username not found. Make sure it's spelled correctly." },
+          { status: 404 }
         )
       }
-    }
 
-    // Get Roblox user ID
-    const robloxUserId = await getRobloxUserId(robloxUsername)
-    if (!robloxUserId) {
-      return NextResponse.json(
-        { error: "Roblox username not found. Make sure it's spelled correctly." },
-        { status: 404 }
-      )
-    }
-
-    // Check for Premium gamepass first (higher tier)
-    const hasPremium = await checkGamepassOwnership(robloxUserId, PREMIUM_GAMEPASS_ID)
-    if (hasPremium) {
-      updateUserPlan(username, "premium", robloxUsername)
+      // Link the account
+      updateUserRobloxUsername(username, robloxUsername)
+      
       return NextResponse.json({
         success: true,
-        plan: "premium",
         robloxUsername,
-        message: "Premium plan activated!"
+        message: "Roblox account linked successfully!"
       })
     }
 
-    // Check for Standard gamepass
-    const hasStandard = await checkGamepassOwnership(robloxUserId, STANDARD_GAMEPASS_ID)
-    if (hasStandard) {
-      updateUserPlan(username, "standard", robloxUsername)
-      return NextResponse.json({
-        success: true,
-        plan: "standard",
-        robloxUsername,
-        message: "Standard plan activated!"
-      })
-    }
-
-    // No gamepass found - link account but set plan to none
-    updateUserPlan(username, "none", robloxUsername)
-    return NextResponse.json({
-      success: false,
-      plan: "none",
-      robloxUsername,
-      error: "No gamepass found. Please purchase a gamepass first."
-    })
+    return NextResponse.json(
+      { error: "Either key or robloxUsername is required" },
+      { status: 400 }
+    )
 
   } catch {
     return NextResponse.json(
@@ -133,7 +120,19 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const username = searchParams.get("username")
+  const webhookKey = searchParams.get("webhookKey")
 
+  // Webhook endpoint for Roblox to get whitelisted users
+  if (webhookKey) {
+    if (webhookKey !== ROBLOX_WEBHOOK_KEY) {
+      return NextResponse.json({ error: "Invalid webhook key" }, { status: 403 })
+    }
+    
+    const robloxUsers = getRegisteredRobloxUsers()
+    return NextResponse.json(robloxUsers)
+  }
+
+  // Regular user status check
   if (!username) {
     return NextResponse.json({ error: "Username required" }, { status: 400 })
   }

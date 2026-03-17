@@ -36,6 +36,16 @@ export type Game = {
   placeId: string
 }
 
+// Whitelist keys
+export type WhitelistKey = {
+  key: string
+  plan: UserPlan
+  createdAt: string
+  createdBy: string
+  usedBy: string | null
+  usedAt: string | null
+}
+
 // Owner account (pre-created) - YOU
 const OWNER: User = {
   id: "owner-001",
@@ -48,7 +58,7 @@ const OWNER: User = {
   lastLogin: new Date().toISOString(),
   isOnline: false,
   robloxUsername: null,
-  plan: "premium", // Owner has premium by default
+  plan: "premium",
   avatar: null,
 }
 
@@ -70,6 +80,12 @@ export const sessions = new Map<string, Session>()
 // Games store - populated via webhooks
 export const games = new Map<string, Game>()
 
+// Whitelist keys store
+export const whitelistKeys = new Map<string, WhitelistKey>()
+
+// Webhook key for Roblox (fixed key for security)
+export const ROBLOX_WEBHOOK_KEY = "moon-ss-webhook-" + Math.random().toString(36).substring(2, 15)
+
 // Chat messages store
 export type ChatMessage = {
   id: string
@@ -87,7 +103,7 @@ export function addChatMessage(username: string, message: string): ChatMessage |
   if (!user) return null
   
   const chatMessage: ChatMessage = {
-    id: `msg-${Date.now()}`,
+    id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
     username: user.username,
     avatar: user.avatar,
     plan: user.plan,
@@ -107,12 +123,65 @@ export function addChatMessage(username: string, message: string): ChatMessage |
 }
 
 export function getChatMessages(): ChatMessage[] {
-  return chatMessages
+  return [...chatMessages]
 }
 
-// Gamepass IDs
-export const STANDARD_GAMEPASS_ID = "1699936888"
-export const PREMIUM_GAMEPASS_ID = "1740553477"
+// Generate whitelist key
+export function generateWhitelistKey(plan: UserPlan, createdBy: string): WhitelistKey {
+  const key = `MOON-${plan.toUpperCase()}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+  
+  const whitelistKey: WhitelistKey = {
+    key,
+    plan,
+    createdAt: new Date().toISOString(),
+    createdBy,
+    usedBy: null,
+    usedAt: null,
+  }
+  
+  whitelistKeys.set(key, whitelistKey)
+  return whitelistKey
+}
+
+// Redeem whitelist key
+export function redeemWhitelistKey(key: string, username: string): { success: boolean; error?: string; plan?: UserPlan } {
+  const whitelistKey = whitelistKeys.get(key)
+  
+  if (!whitelistKey) {
+    return { success: false, error: "Invalid key" }
+  }
+  
+  if (whitelistKey.usedBy) {
+    return { success: false, error: "This key has already been used" }
+  }
+  
+  // Mark key as used
+  whitelistKey.usedBy = username
+  whitelistKey.usedAt = new Date().toISOString()
+  
+  return { success: true, plan: whitelistKey.plan }
+}
+
+// Get all whitelist keys
+export function getAllWhitelistKeys(): WhitelistKey[] {
+  return Array.from(whitelistKeys.values())
+}
+
+// Delete whitelist key
+export function deleteWhitelistKey(key: string): boolean {
+  return whitelistKeys.delete(key)
+}
+
+// Get all registered Roblox usernames (for webhook)
+export function getRegisteredRobloxUsers(): string[] {
+  const robloxUsers: string[] = []
+  for (const user of users.values()) {
+    if (user.robloxUsername && user.plan !== "none") {
+      robloxUsers.push(user.robloxUsername)
+    }
+  }
+  return robloxUsers
+}
 
 // Helper functions
 export function isBlacklisted(username: string): BlacklistedUser | null {
@@ -211,7 +280,7 @@ export function createStaffAccount(username: string, password: string, email: st
     lastLogin: new Date().toISOString(),
     isOnline: false,
     robloxUsername: null,
-    plan: "premium", // Staff get premium by default
+    plan: "premium",
     avatar: null,
   }
   
@@ -238,11 +307,18 @@ export function deleteStaffAccount(username: string): boolean {
   return true
 }
 
-export function updateUserPlan(username: string, plan: UserPlan, robloxUsername: string): boolean {
+export function updateUserPlan(username: string, plan: UserPlan, robloxUsername: string | null): boolean {
   const user = users.get(username.toLowerCase())
   if (!user) return false
   
   user.plan = plan
+  if (robloxUsername) user.robloxUsername = robloxUsername
+  return true
+}
+
+export function updateUserRobloxUsername(username: string, robloxUsername: string): boolean {
+  const user = users.get(username.toLowerCase())
+  if (!user) return false
   user.robloxUsername = robloxUsername
   return true
 }
