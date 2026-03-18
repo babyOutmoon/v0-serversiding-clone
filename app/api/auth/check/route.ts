@@ -1,36 +1,28 @@
 import { NextResponse } from "next/server"
-import { isBlacklisted, isSessionValid, sessions, users } from "@/lib/store"
+import { isBlacklisted, getUserByUsername } from "@/lib/db"
 
 export async function POST(request: Request) {
   try {
-    const { username, sessionToken } = await request.json()
+    const { username } = await request.json()
 
     if (!username) {
       return NextResponse.json({ error: "Username required" }, { status: 400 })
     }
 
     // Check blacklist
-    const blacklistEntry = isBlacklisted(username)
-    if (blacklistEntry) {
+    const blacklisted = await isBlacklisted(username)
+    if (blacklisted) {
       return NextResponse.json({
         valid: false,
         blacklisted: true,
         blacklist: {
-          reason: blacklistEntry.reason,
-          blacklistedBy: blacklistEntry.blacklistedBy,
-          blacklistedAt: blacklistEntry.blacklistedAt,
+          reason: "You have been blacklisted",
         }
       })
     }
 
-    // Verify session with expiration check
-    const session = sessions.get(username.toLowerCase())
-    if (!session || !isSessionValid(username, sessionToken)) {
-      return NextResponse.json({ valid: false, reason: "Session expired" })
-    }
-
     // Get user info
-    const user = users.get(username.toLowerCase())
+    const user = await getUserByUsername(username)
     if (!user) {
       return NextResponse.json({ valid: false, reason: "User not found" })
     }
@@ -42,9 +34,13 @@ export async function POST(request: Request) {
         username: user.username,
         role: user.role,
         email: user.email,
+        plan: user.plan,
+        robloxUsername: user.roblox_username,
+        avatar: user.avatar,
       }
     })
-  } catch {
+  } catch (error) {
+    console.error("Check error:", error)
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 })
   }
 }

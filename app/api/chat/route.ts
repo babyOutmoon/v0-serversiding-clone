@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server"
-import { addChatMessage, getChatMessages, users } from "@/lib/store"
+import { addChatMessage, getChatMessages, getUserByUsername } from "@/lib/db"
 
 export async function GET() {
-  return NextResponse.json({ messages: getChatMessages() })
+  const messages = await getChatMessages()
+  return NextResponse.json({ 
+    messages: messages.map(m => ({
+      id: m.id,
+      username: m.username,
+      message: m.message,
+      role: m.role,
+      avatar: m.avatar,
+      timestamp: m.created_at,
+    })).reverse() // Oldest first for chat display
+  })
 }
 
 export async function POST(request: Request) {
@@ -14,7 +24,7 @@ export async function POST(request: Request) {
     }
 
     // Check if user exists
-    const user = users.get(username.toLowerCase())
+    const user = await getUserByUsername(username)
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
@@ -25,13 +35,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Message cannot be empty" }, { status: 400 })
     }
 
-    const chatMessage = addChatMessage(username, sanitizedMessage)
+    const chatMessage = await addChatMessage(username, sanitizedMessage, user.role, user.avatar)
     if (!chatMessage) {
       return NextResponse.json({ error: "Failed to send message" }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, message: chatMessage })
-  } catch {
+    return NextResponse.json({ 
+      success: true, 
+      message: {
+        id: chatMessage.id,
+        username: chatMessage.username,
+        message: chatMessage.message,
+        role: chatMessage.role,
+        avatar: chatMessage.avatar,
+        timestamp: chatMessage.created_at,
+      }
+    })
+  } catch (error) {
+    console.error("Chat error:", error)
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 })
   }
 }

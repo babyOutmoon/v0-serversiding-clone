@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { users, type User } from "@/lib/store"
+import { getUserByUsername, createUser } from "@/lib/db"
 
 export async function POST(request: Request) {
   try {
@@ -26,7 +26,8 @@ export async function POST(request: Request) {
     }
 
     // Check if username already exists
-    if (users.has(username.toLowerCase())) {
+    const existingUser = await getUserByUsername(username)
+    if (existingUser) {
       return NextResponse.json(
         { error: "Username already taken" },
         { status: 400 }
@@ -34,28 +35,28 @@ export async function POST(request: Request) {
     }
 
     // Create user
-    const newUser: User = {
-      id: `user-${Date.now()}`,
+    const newUser = await createUser({
       username,
       password,
       email,
-      role: "user",
       ip,
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString(),
-      isOnline: false,
-      robloxUsername: null,
+      role: "user",
       plan: "none",
-      avatar: null,
-    }
+    })
 
-    users.set(username.toLowerCase(), newUser)
+    if (!newUser) {
+      return NextResponse.json(
+        { error: "Failed to create account" },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({
       success: true,
       message: "Account created successfully",
     })
-  } catch {
+  } catch (error) {
+    console.error("Signup error:", error)
     return NextResponse.json(
       { error: "Something went wrong" },
       { status: 500 }

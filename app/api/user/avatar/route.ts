@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { updateUserAvatar, getUser } from "@/lib/store"
+import { updateUser, getUserByUsername } from "@/lib/db"
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const user = getUser(username)
+    const user = await getUserByUsername(username)
     if (!user) {
       return NextResponse.json(
         { error: "User not found" },
@@ -20,8 +20,8 @@ export async function POST(request: Request) {
       )
     }
 
-    const success = updateUserAvatar(username, avatar)
-    if (!success) {
+    const updated = await updateUser(username, { avatar })
+    if (!updated) {
       return NextResponse.json(
         { error: "Failed to update avatar" },
         { status: 500 }
@@ -32,7 +32,8 @@ export async function POST(request: Request) {
       success: true,
       avatar,
     })
-  } catch {
+  } catch (error) {
+    console.error("Avatar update error:", error)
     return NextResponse.json(
       { error: "Something went wrong" },
       { status: 500 }

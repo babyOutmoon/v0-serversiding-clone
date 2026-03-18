@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { users, sessions, isBlacklisted } from "@/lib/store"
+import { getUserByUsername, updateUser, isBlacklisted } from "@/lib/db"
 
 export async function POST(request: Request) {
   try {
@@ -18,32 +18,21 @@ export async function POST(request: Request) {
     }
 
     // Check if user is blacklisted
-    const blacklistEntry = isBlacklisted(username)
-    if (blacklistEntry) {
+    const blacklisted = await isBlacklisted(username)
+    if (blacklisted) {
       return NextResponse.json(
         { 
           error: "blacklisted",
           blacklist: {
-            reason: blacklistEntry.reason,
-            blacklistedBy: blacklistEntry.blacklistedBy,
-            blacklistedAt: blacklistEntry.blacklistedAt,
+            reason: "You have been blacklisted",
           }
         },
         { status: 403 }
       )
     }
 
-    // Find user - try both exact and case-insensitive
-    let user = users.get(username.toLowerCase())
-    if (!user) {
-      // Try to find by iterating (in case of case mismatch)
-      for (const [, u] of users) {
-        if (u.username.toLowerCase() === username.toLowerCase()) {
-          user = u
-          break
-        }
-      }
-    }
+    // Find user
+    const user = await getUserByUsername(username)
     
     if (!user || user.password !== password) {
       return NextResponse.json(
@@ -53,14 +42,15 @@ export async function POST(request: Request) {
     }
 
     // Update user info
-    user.lastLogin = new Date().toISOString()
-    user.ip = ip
-    user.isOnline = true
+    await updateUser(username, {
+      last_login: new Date().toISOString(),
+      ip,
+      is_online: true,
+    })
 
     // Create session with 30-day expiration
     const sessionToken = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const expiresAt = Date.now() + (30 * 24 * 60 * 60 * 1000) // 30 days
-    sessions.set(username.toLowerCase(), { token: sessionToken, expiresAt })
 
     // Create response with cookie
     const response = NextResponse.json({
@@ -71,7 +61,7 @@ export async function POST(request: Request) {
         role: user.role,
         email: user.email,
         plan: user.plan,
-        robloxUsername: user.robloxUsername,
+        robloxUsername: user.roblox_username,
         avatar: user.avatar,
       },
       sessionToken,
@@ -86,7 +76,7 @@ export async function POST(request: Request) {
       id: user.id,
       email: user.email,
       plan: user.plan,
-      robloxUsername: user.robloxUsername,
+      robloxUsername: user.roblox_username,
       avatar: user.avatar,
       expiresAt,
     }), {
@@ -98,7 +88,8 @@ export async function POST(request: Request) {
     })
 
     return response
-  } catch {
+  } catch (error) {
+    console.error("Login error:", error)
     return NextResponse.json(
       { error: "Something went wrong" },
       { status: 500 }

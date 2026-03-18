@@ -1,12 +1,5 @@
 import { NextResponse } from "next/server"
-import { addGame, getAllGames, deleteGame, games } from "@/lib/store"
-
-// Fixed webhook key - no regeneration needed
-const WEBHOOK_KEY = "moon-webhook-v2-secure-key-2024"
-
-export function getWebhookKey() {
-  return WEBHOOK_KEY
-}
+import { addGame, getAllGames, deleteGame, updateGame, getSetting } from "@/lib/db"
 
 // POST - Receive game data from Roblox webhook
 export async function POST(request: Request) {
@@ -23,44 +16,43 @@ export async function POST(request: Request) {
     }
 
     // Validate webhook key
-    if (!providedKey || providedKey !== WEBHOOK_KEY) {
-      console.log("[v0] Invalid webhook key:", providedKey)
+    const storedKey = await getSetting("webhook_key")
+    if (!providedKey || providedKey !== storedKey) {
       return NextResponse.json({ error: "Invalid webhook key" }, { status: 401 })
     }
 
     const { action, gameData } = body
-    console.log("[v0] Webhook action:", action, "gameData:", gameData)
 
     switch (action) {
       case "addGame": {
-        const { placeId, name, players, imageUrl, gameUrl } = gameData || {}
+        const { placeId, name, players, imageUrl } = gameData || {}
         
         if (!placeId || !name) {
           return NextResponse.json({ error: "placeId and name are required" }, { status: 400 })
         }
 
         // Check if game already exists by placeId
-        const existingGames = getAllGames()
-        const exists = existingGames.find(g => g.placeId === String(placeId))
+        const existingGames = await getAllGames()
+        const exists = existingGames.find(g => g.place_id === String(placeId))
         
         if (exists) {
           // Update existing game instead
-          exists.players = players || exists.players
-          exists.name = name || exists.name
-          games.set(exists.id, exists)
-          return NextResponse.json({ success: true, message: "Game updated", game: exists })
+          const updated = await updateGame(String(placeId), {
+            players: players || exists.players,
+            name: name || exists.name,
+          })
+          return NextResponse.json({ success: true, message: "Game updated", game: updated })
         }
 
-        const newGame = addGame({
+        const newGame = await addGame({
           name,
+          place_id: String(placeId),
           players: players || 0,
+          max_players: 0,
           status: "online",
-          imageUrl: imageUrl || "",
-          gameUrl: gameUrl || `https://www.roblox.com/games/${placeId}`,
-          placeId: String(placeId),
+          thumbnail: imageUrl || null,
         })
 
-        console.log("[v0] Game added:", newGame)
         return NextResponse.json({ success: true, message: "Game added", game: newGame })
       }
 
@@ -71,21 +63,16 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "placeId is required" }, { status: 400 })
         }
 
-        // Find game by placeId
-        const allGames = getAllGames()
-        const game = allGames.find(g => g.placeId === String(placeId))
-        
-        if (!game) {
+        const updated = await updateGame(String(placeId), {
+          ...(players !== undefined && { players }),
+          ...(status !== undefined && { status }),
+        })
+
+        if (!updated) {
           return NextResponse.json({ error: "Game not found" }, { status: 404 })
         }
 
-        // Update game data
-        if (players !== undefined) game.players = players
-        if (status !== undefined) game.status = status
-        
-        games.set(game.id, game)
-
-        return NextResponse.json({ success: true, message: "Game updated", game })
+        return NextResponse.json({ success: true, message: "Game updated", game: updated })
       }
 
       case "removeGame": {
@@ -95,15 +82,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "placeId is required" }, { status: 400 })
         }
 
-        // Find game by placeId
-        const allGames = getAllGames()
-        const game = allGames.find(g => g.placeId === String(placeId))
-        
-        if (!game) {
-          return NextResponse.json({ error: "Game not found" }, { status: 404 })
-        }
-
-        deleteGame(game.id)
+        await deleteGame(String(placeId))
 
         return NextResponse.json({ success: true, message: "Game removed" })
       }
@@ -112,7 +91,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Invalid action. Use: addGame, updateGame, removeGame" }, { status: 400 })
     }
   } catch (error) {
-    console.error("[v0] Webhook error:", error)
+    console.error("Webhook error:", error)
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 }
@@ -125,8 +104,9 @@ export async function GET(request: Request) {
 
   // Simple admin verification
   if (action === "getKey" && adminKey === "owner-access") {
+    const webhookKey = await getSetting("webhook_key")
     return NextResponse.json({ 
-      webhookKey: WEBHOOK_KEY,
+      webhookKey,
       webhookUrl: "/api/webhook",
     })
   }

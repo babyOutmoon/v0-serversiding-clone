@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server"
 import { 
-  users, 
+  getUserByUsername,
   addScriptLog, 
   getScriptLogs, 
   queueScript,
   getPendingScriptsForUser,
   clearPendingScriptsForUser,
-  getRegisteredRobloxUsers,
-  ROBLOX_WEBHOOK_KEY
-} from "@/lib/store"
+  getWhitelistedRobloxUsers,
+  getSetting
+} from "@/lib/db"
 
 // POST - Queue a script for execution
 export async function POST(request: Request) {
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     }
 
     // Find user
-    const user = users.get(username.toLowerCase())
+    const user = await getUserByUsername(username)
     if (!user) {
       return NextResponse.json(
         { error: "User not found" },
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     }
 
     // Check if user has linked Roblox account
-    if (!user.robloxUsername) {
+    if (!user.roblox_username) {
       return NextResponse.json(
         { error: "You need to link your Roblox account first" },
         { status: 403 }
@@ -48,24 +48,25 @@ export async function POST(request: Request) {
     }
 
     // Queue the script for this Roblox user
-    queueScript(user.robloxUsername, script)
+    await queueScript(user.roblox_username, script)
 
     // Log the script execution
-    addScriptLog(
-      user.username,
-      user.robloxUsername,
+    await addScriptLog({
+      username: user.username,
+      roblox_username: user.roblox_username,
       script,
-      "auto",
-      "Auto-detect"
-    )
+      game_id: "auto",
+      game_name: "Auto-detect",
+    })
 
     return NextResponse.json({
       success: true,
       message: "Script queued for execution",
-      robloxUsername: user.robloxUsername,
+      robloxUsername: user.roblox_username,
     })
 
-  } catch {
+  } catch (error) {
+    console.error("Executor error:", error)
     return NextResponse.json(
       { error: "Something went wrong" },
       { status: 500 }
@@ -83,22 +84,23 @@ export async function GET(request: Request) {
 
   // Roblox script polling for pending scripts
   if (webhookKey && robloxUser) {
-    if (webhookKey !== ROBLOX_WEBHOOK_KEY) {
+    const storedKey = await getSetting("webhook_key")
+    if (webhookKey !== storedKey) {
       return NextResponse.json({ error: "Invalid webhook key" }, { status: 403 })
     }
 
     // Check if this roblox user is whitelisted
-    const whitelisted = getRegisteredRobloxUsers()
-    if (!whitelisted.includes(robloxUser)) {
+    const whitelisted = await getWhitelistedRobloxUsers()
+    if (!whitelisted.map(u => u.toLowerCase()).includes(robloxUser.toLowerCase())) {
       return NextResponse.json({ scripts: [], whitelisted: false })
     }
 
     // Get pending scripts for this user
-    const scripts = getPendingScriptsForUser(robloxUser)
+    const scripts = await getPendingScriptsForUser(robloxUser)
     
     // Clear the scripts after sending (they've been fetched)
     if (action === "fetch") {
-      clearPendingScriptsForUser(robloxUser)
+      await clearPendingScriptsForUser(robloxUser)
     }
 
     return NextResponse.json({ 
@@ -112,10 +114,21 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
   }
 
-  const user = users.get(admin.toLowerCase())
+  const user = await getUserByUsername(admin)
   if (!user || (user.role !== "owner" && user.role !== "staff")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
   }
 
-  return NextResponse.json({ logs: getScriptLogs() })
+  const logs = await getScriptLogs()
+  return NextResponse.json({ 
+    logs: logs.map(l => ({
+      id: l.id,
+      username: l.username,
+      robloxUsername: l.roblox_username,
+      script: l.script,
+      gameId: l.game_id,
+      gameName: l.game_name,
+      timestamp: l.created_at,
+    }))
+  })
 }

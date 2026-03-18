@@ -263,16 +263,16 @@ const fetchAdminData = useCallback(async () => {
     setLoading(false)
   }, [user, isAdmin, isOwner])
 
-  // Fetch games for non-admin users too
+  // Fetch games for all users
   const fetchGames = useCallback(async () => {
     try {
-      const res = await fetch(`/api/admin?action=games&admin=${user?.username || ""}`)
+      const res = await fetch("/api/games")
       const data = await res.json()
       if (data.games) setGames(data.games)
     } catch {
       // Ignore
     }
-  }, [user])
+  }, [])
 
 // Fetch webhook key (owner only)
   const fetchWebhookKey = useCallback(async () => {
@@ -348,8 +348,8 @@ setChatLoading(false)
     }
   }
 
-  // Delete whitelist key
-  const deleteKey = async (key: string) => {
+// Delete whitelist key
+  const deleteKey = async (keyId: string) => {
     if (!user || !isOwner) return
     try {
       const res = await fetch("/api/admin", {
@@ -358,7 +358,7 @@ setChatLoading(false)
         body: JSON.stringify({
           action: "deleteKey",
           adminUsername: user.username,
-          key,
+          keyId,
         }),
       })
       const data = await res.json()
@@ -598,11 +598,28 @@ setChatLoading(false)
       const interval = setInterval(fetchChatMessages, 5000)
       return () => clearInterval(interval)
     }
-  }, [user, activeTab, fetchChatMessages])
+}, [user, activeTab, fetchChatMessages])
 
+  // Refresh all data every 5 minutes to keep in sync with database
   useEffect(() => {
     if (!user) return
     
+    const refreshAllData = () => {
+      fetchGames()
+      if (isAdmin) {
+        fetchAdminData()
+        fetchScriptLogs()
+      }
+    }
+
+    // Refresh every 5 minutes (300000ms)
+    const interval = setInterval(refreshAllData, 300000)
+    return () => clearInterval(interval)
+  }, [user, isAdmin, fetchGames, fetchAdminData, fetchScriptLogs])
+  
+  useEffect(() => {
+    if (!user) return
+  
     const checkSession = async () => {
       try {
         const session = JSON.parse(localStorage.getItem("moonss_session") || "{}")
@@ -2357,7 +2374,7 @@ const sidebarItems = [
                                 </td>
                                 <td className="p-3">
                                   <button
-                                    onClick={() => deleteKey(k.key)}
+                                    onClick={() => deleteKey(k.id)}
                                     className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
                                     title="Delete"
                                   >
