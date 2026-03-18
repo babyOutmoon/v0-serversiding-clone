@@ -158,10 +158,6 @@
   }
 }
 
-html[data-scroll-behavior="smooth"] {
-  scroll-behavior: smooth;
-}
-
 /* ============ KEYFRAMES ============ */
 
 @keyframes float {
