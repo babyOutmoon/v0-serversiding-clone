@@ -256,7 +256,10 @@ const fetchAdminData = useCallback(async () => {
       if (results[2]?.games) setGames(results[2].games)
       if (isOwner && results[3]?.staff) setStaffAccounts(results[3].staff)
       if (isOwner && results[4]?.keys) setWhitelistKeys(results[4].keys)
-      if (isOwner && results[5]?.webhookUrl) setRobloxWebhookUrl(results[5].webhookUrl)
+      if (isOwner && results[5]?.webhookKey) {
+        setWebhookKey(results[5].webhookKey)
+        setRobloxWebhookUrl(results[5].webhookUrl)
+      }
     } catch (err) {
       console.error("Failed to fetch admin data", err)
     }
@@ -555,7 +558,45 @@ setChatLoading(false)
     router.push("/login")
   }, [router])
 
-// Fetch admin data immediately when user loads and is admin
+  // Refresh user data from server on first load
+  useEffect(() => {
+    if (!user) return
+    
+    const refreshUserData = async () => {
+      try {
+        const res = await fetch("/api/auth/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: user.username }),
+        })
+        const data = await res.json()
+        
+        if (data.valid && data.user) {
+          setUser(prev => prev ? {
+            ...prev,
+            plan: data.user.plan,
+            robloxUsername: data.user.robloxUsername,
+            avatar: data.user.avatar,
+            role: data.user.role,
+          } : null)
+          
+          // Update localStorage
+          const session = JSON.parse(localStorage.getItem("moonss_session") || "{}")
+          session.plan = data.user.plan
+          session.robloxUsername = data.user.robloxUsername
+          session.avatar = data.user.avatar
+          session.role = data.user.role
+          localStorage.setItem("moonss_session", JSON.stringify(session))
+        }
+      } catch {
+        // Ignore errors
+      }
+    }
+    
+    refreshUserData()
+  }, []) // Only run once on mount
+
+  // Fetch admin data immediately when user loads and is admin
   useEffect(() => {
     if (user && isAdmin) {
       fetchAdminData()
@@ -648,8 +689,24 @@ setChatLoading(false)
           localStorage.removeItem("moonss_session")
           document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
           router.push("/login")
+          return
         }
-        // Don't log out for session mismatch - server may have restarted
+        
+        // Update user data from server (in case plan changed, etc.)
+        if (data.valid && data.user) {
+          setUser(prev => prev ? {
+            ...prev,
+            plan: data.user.plan,
+            robloxUsername: data.user.robloxUsername,
+            avatar: data.user.avatar,
+          } : null)
+          
+          // Also update localStorage
+          const session = JSON.parse(localStorage.getItem("moonss_session") || "{}")
+          session.plan = data.user.plan
+          session.robloxUsername = data.user.robloxUsername
+          localStorage.setItem("moonss_session", JSON.stringify(session))
+        }
       } catch {
         // Ignore errors - network issues shouldn't log user out
       }

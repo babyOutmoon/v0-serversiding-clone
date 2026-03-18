@@ -51,8 +51,7 @@ export type Game = {
   max_players: number
   status: "online" | "offline"
   thumbnail: string | null
-  last_update: string
-  created_at: string
+  last_updated: string
 }
 
 export type BlacklistedUser = {
@@ -255,13 +254,13 @@ export async function clearPendingScriptsForUser(robloxUsername: string): Promis
 }
 
 // Games functions
-export async function addGame(game: Omit<Game, "id" | "created_at" | "last_update">): Promise<Game | null> {
+export async function addGame(game: Omit<Game, "id" | "last_updated">): Promise<Game | null> {
   const supabase = await createClient()
   const id = `game-${Date.now()}`
   
   const { data } = await supabase
     .from("games")
-    .upsert({ id, ...game, last_update: new Date().toISOString() }, { onConflict: "place_id" })
+    .upsert({ id, ...game, last_updated: new Date().toISOString() }, { onConflict: "place_id" })
     .select()
     .single()
   return data
@@ -271,7 +270,7 @@ export async function updateGame(placeId: string, updates: Partial<Game>): Promi
   const supabase = await createClient()
   const { data } = await supabase
     .from("games")
-    .update({ ...updates, last_update: new Date().toISOString() })
+    .update({ ...updates, last_updated: new Date().toISOString() })
     .eq("place_id", placeId)
     .select()
     .single()
