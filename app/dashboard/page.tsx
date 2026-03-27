@@ -600,7 +600,7 @@ setChatLoading(false)
     }
     
     refreshUserData()
-  }, []) // Only run once on mount
+  }, [user?.username]) // Run when user changes
 
   // Fetch admin data immediately when user loads and is admin
   useEffect(() => {
