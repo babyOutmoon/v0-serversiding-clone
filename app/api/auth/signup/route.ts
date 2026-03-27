@@ -26,9 +26,7 @@ export async function POST(request: Request) {
     }
 
     // Check if username already exists
-    console.log("[v0] Checking if username exists:", username)
     const existingUser = await getUserByUsername(username)
-    console.log("[v0] Existing user:", existingUser ? "found" : "not found")
     if (existingUser) {
       return NextResponse.json(
         { error: "Username already taken" },
@@ -37,7 +35,6 @@ export async function POST(request: Request) {
     }
 
     // Create user
-    console.log("[v0] Creating new user:", username)
     const newUser = await createUser({
       username,
       password,
@@ -47,7 +44,6 @@ export async function POST(request: Request) {
       plan: "none",
     })
 
-    console.log("[v0] New user result:", newUser ? "created" : "failed")
     if (!newUser) {
       return NextResponse.json(
         { error: "Failed to create account" },

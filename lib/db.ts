@@ -74,14 +74,12 @@ export type ChatMessage = {
 // User functions
 export async function getUserByUsername(username: string): Promise<User | null> {
   try {
-    console.log("[v0][db] getUserByUsername called for:", username)
     const supabase = getAdminClient()
     const { data, error } = await supabase
       .from("moon_users")
       .select("*")
       .ilike("username", username)
       .single()
-    console.log("[v0][db] getUserByUsername result:", { hasData: !!data, error: error?.message })
     if (error && error.code !== "PGRST116") {
       console.error("[db] getUserByUsername error:", error.message)
     }
@@ -112,7 +110,6 @@ export async function getUserById(id: string): Promise<User | null> {
 
 export async function createUser(user: Partial<User> & { username: string; password: string }): Promise<User | null> {
   try {
-    console.log("[v0][db] createUser called for:", user.username)
     const supabase = getAdminClient()
     const id = `user-${Date.now()}`
     const { data, error } = await supabase
@@ -133,7 +130,6 @@ export async function createUser(user: Partial<User> & { username: string; passw
       .select()
       .single()
     
-    console.log("[v0][db] createUser result:", { hasData: !!data, error: error?.message })
     if (error) {
       console.error("[db] createUser error:", error.message)
       return null

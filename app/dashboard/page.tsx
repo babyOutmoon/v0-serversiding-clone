@@ -1573,66 +1573,78 @@ const sidebarItems = [
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {games.map((game) => (
-                  <div
-                    key={game.id}
-                    className={`glass rounded-xl border border-border/30 overflow-hidden group hover:border-primary/50 transition-all relative ${
-                      !hasAccess ? "pointer-events-none" : ""
-                    }`}
-                  >
-                    {!hasAccess && (
-                      <div className="absolute inset-0 z-10 backdrop-blur-md bg-background/50 flex items-center justify-center">
-                        <Lock className="h-8 w-8 text-muted-foreground" />
-                      </div>
-                    )}
-                    <div className="aspect-video bg-muted relative overflow-hidden">
-                      {game.imageUrl ? (
-                        <img
-                          src={game.imageUrl}
-                          alt={game.name}
-                          className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
-                            !hasAccess ? "blur-lg" : ""
-                          }`}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Gamepad2 className="h-12 w-12 text-muted-foreground" />
+              {games.length === 0 ? (
+                <div className="glass rounded-xl border border-border/30 p-12 text-center animate-fade-in">
+                  <Gamepad2 className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-foreground mb-2">No Games Infected Yet</h3>
+                  <p className="text-muted-foreground max-w-md mx-auto">
+                    Games will appear here when they are infected with the Moon Server-Side script. 
+                    Check back later or ask an admin to infect a game.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {games.map((game, index) => (
+                    <div
+                      key={game.id}
+                      className={`glass rounded-xl border border-border/30 overflow-hidden group hover:border-primary/50 transition-all relative animate-fade-in ${
+                        !hasAccess ? "pointer-events-none" : ""
+                      }`}
+                      style={{ animationDelay: `${index * 50}ms` }}
+                    >
+                      {!hasAccess && (
+                        <div className="absolute inset-0 z-10 backdrop-blur-md bg-background/50 flex items-center justify-center">
+                          <Lock className="h-8 w-8 text-muted-foreground" />
                         </div>
                       )}
-                      <div className={`absolute top-2 right-2 px-2 py-1 rounded-md text-xs font-semibold ${
-                        game.status === "online" ? "bg-green-500/90 text-white" :
-                        game.status === "maintenance" ? "bg-yellow-500/90 text-black" :
-                        "bg-destructive/90 text-white"
-                      }`}>
-                        {game.status}
+                      <div className="aspect-video bg-muted relative overflow-hidden">
+                        {game.imageUrl ? (
+                          <img
+                            src={game.imageUrl}
+                            alt={game.name}
+                            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+                              !hasAccess ? "blur-lg" : ""
+                            }`}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
+                            <Gamepad2 className="h-12 w-12 text-primary/50" />
+                          </div>
+                        )}
+                        <div className={`absolute top-2 right-2 px-2 py-1 rounded-md text-xs font-semibold ${
+                          game.status === "online" ? "bg-green-500/90 text-white" :
+                          game.status === "maintenance" ? "bg-yellow-500/90 text-black" :
+                          "bg-destructive/90 text-white"
+                        }`}>
+                          {game.status}
+                        </div>
+                      </div>
+                      <div className="p-4">
+                        <h3 className={`font-semibold text-foreground ${!hasAccess ? "blur-sm" : ""}`}>
+                          {hasAccess ? game.name : "Locked Game"}
+                        </h3>
+                        <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                          <Users className="h-3 w-3" />
+                          {formatPlayers(game.players)} playing
+                        </p>
+                        {hasAccess && game.placeId && (
+                          <a
+                            href={`https://www.roblox.com/games/${game.placeId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all"
+                          >
+                            <Play className="h-4 w-4" />
+                            Join Game
+                          </a>
+                        )}
                       </div>
                     </div>
-                    <div className="p-4">
-                      <h3 className={`font-semibold text-foreground ${!hasAccess ? "blur-sm" : ""}`}>
-                        {hasAccess ? game.name : "Locked Game"}
-                      </h3>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                        <Users className="h-3 w-3" />
-                        {formatPlayers(game.players)} playing
-                      </p>
-                      {hasAccess && game.gameUrl && (
-                        <a
-                          href={game.gameUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all"
-                        >
-                          <Play className="h-4 w-4" />
-                          Join Game
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
-)}
+          )}
 
           {/* Executor Tab */}
           {activeTab === "executor" && (
