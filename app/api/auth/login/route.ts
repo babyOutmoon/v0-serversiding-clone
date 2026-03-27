@@ -32,9 +32,12 @@ export async function POST(request: Request) {
     }
 
     // Find user
+    console.log("[v0] Looking up user:", username)
     const user = await getUserByUsername(username)
+    console.log("[v0] User found:", user ? "yes" : "no", user ? { id: user.id, plan: user.plan } : null)
     
     if (!user || user.password !== password) {
+      console.log("[v0] Login failed - user exists:", !!user, "password match:", user?.password === password)
       return NextResponse.json(
         { error: "Invalid username or password" },
         { status: 401 }
