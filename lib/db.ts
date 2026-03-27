@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { getAdminClient } from "@/lib/supabase/admin"
 
 // Types
 export type User = {
@@ -73,319 +73,624 @@ export type ChatMessage = {
 
 // User functions
 export async function getUserByUsername(username: string): Promise<User | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("moon_users")
-    .select("*")
-    .ilike("username", username)
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("moon_users")
+      .select("*")
+      .ilike("username", username)
+      .single()
+    if (error && error.code !== "PGRST116") {
+      console.error("[db] getUserByUsername error:", error.message)
+    }
+    return data
+  } catch (e) {
+    console.error("[db] getUserByUsername exception:", e)
+    return null
+  }
 }
 
 export async function getUserById(id: string): Promise<User | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("moon_users")
-    .select("*")
-    .eq("id", id)
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("moon_users")
+      .select("*")
+      .eq("id", id)
+      .single()
+    if (error && error.code !== "PGRST116") {
+      console.error("[db] getUserById error:", error.message)
+    }
+    return data
+  } catch (e) {
+    console.error("[db] getUserById exception:", e)
+    return null
+  }
 }
 
 export async function createUser(user: Partial<User> & { username: string; password: string }): Promise<User | null> {
-  const supabase = await createClient()
-  const id = `user-${Date.now()}`
-  const { data, error } = await supabase
-    .from("moon_users")
-    .insert({
-      id,
-      username: user.username,
-      password: user.password,
-      email: user.email || null,
-      role: user.role || "user",
-      ip: user.ip || null,
-      plan: user.plan || "none",
-      avatar: user.avatar || null,
-    })
-    .select()
-    .single()
-  
-  if (error) console.error("Create user error:", error)
-  return data
+  try {
+    const supabase = getAdminClient()
+    const id = `user-${Date.now()}`
+    const { data, error } = await supabase
+      .from("moon_users")
+      .insert({
+        id,
+        username: user.username,
+        password: user.password,
+        email: user.email || null,
+        role: user.role || "user",
+        ip: user.ip || null,
+        plan: user.plan || "none",
+        avatar: user.avatar || null,
+        is_online: false,
+        created_at: new Date().toISOString(),
+        last_login: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    
+    if (error) {
+      console.error("[db] createUser error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] createUser exception:", e)
+    return null
+  }
 }
 
 export async function updateUser(username: string, updates: Partial<User>): Promise<User | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("moon_users")
-    .update(updates)
-    .ilike("username", username)
-    .select()
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("moon_users")
+      .update(updates)
+      .ilike("username", username)
+      .select()
+      .single()
+    if (error) {
+      console.error("[db] updateUser error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] updateUser exception:", e)
+    return null
+  }
 }
 
 export async function getAllUsers(): Promise<User[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("moon_users")
-    .select("*")
-    .order("created_at", { ascending: false })
-  return data || []
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("moon_users")
+      .select("*")
+      .order("created_at", { ascending: false })
+    if (error) {
+      console.error("[db] getAllUsers error:", error.message)
+      return []
+    }
+    return data || []
+  } catch (e) {
+    console.error("[db] getAllUsers exception:", e)
+    return []
+  }
 }
 
 export async function deleteUser(username: string): Promise<boolean> {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("moon_users")
-    .delete()
-    .ilike("username", username)
-  return !error
+  try {
+    const supabase = getAdminClient()
+    const { error } = await supabase
+      .from("moon_users")
+      .delete()
+      .ilike("username", username)
+    if (error) {
+      console.error("[db] deleteUser error:", error.message)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error("[db] deleteUser exception:", e)
+    return false
+  }
 }
 
 // Whitelist keys functions
 export async function createWhitelistKey(plan: "standard" | "premium"): Promise<WhitelistKey | null> {
-  const supabase = await createClient()
-  const prefix = plan === "premium" ? "MOON-PREMIUM" : "MOON-STANDARD"
-  const key = `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
-  const id = `key-${Date.now()}`
-  
-  const { data } = await supabase
-    .from("whitelist_keys")
-    .insert({ id, key, plan, used: false })
-    .select()
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const prefix = plan === "premium" ? "MOON-PREMIUM" : "MOON-STANDARD"
+    const key = `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+    const id = `key-${Date.now()}`
+    
+    const { data, error } = await supabase
+      .from("whitelist_keys")
+      .insert({ 
+        id, 
+        key, 
+        plan, 
+        used: false,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    if (error) {
+      console.error("[db] createWhitelistKey error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] createWhitelistKey exception:", e)
+    return null
+  }
 }
 
 export async function getWhitelistKeyByKey(key: string): Promise<WhitelistKey | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("whitelist_keys")
-    .select("*")
-    .eq("key", key)
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("whitelist_keys")
+      .select("*")
+      .eq("key", key)
+      .single()
+    if (error && error.code !== "PGRST116") {
+      console.error("[db] getWhitelistKeyByKey error:", error.message)
+    }
+    return data
+  } catch (e) {
+    console.error("[db] getWhitelistKeyByKey exception:", e)
+    return null
+  }
 }
 
 export async function getAllWhitelistKeys(): Promise<WhitelistKey[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("whitelist_keys")
-    .select("*")
-    .order("created_at", { ascending: false })
-  return data || []
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("whitelist_keys")
+      .select("*")
+      .order("created_at", { ascending: false })
+    if (error) {
+      console.error("[db] getAllWhitelistKeys error:", error.message)
+      return []
+    }
+    return data || []
+  } catch (e) {
+    console.error("[db] getAllWhitelistKeys exception:", e)
+    return []
+  }
 }
 
 export async function useWhitelistKey(key: string, username: string): Promise<WhitelistKey | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("whitelist_keys")
-    .update({ used: true, used_by: username, used_at: new Date().toISOString() })
-    .eq("key", key)
-    .eq("used", false)
-    .select()
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("whitelist_keys")
+      .update({ 
+        used: true, 
+        used_by: username, 
+        used_at: new Date().toISOString() 
+      })
+      .eq("key", key)
+      .eq("used", false)
+      .select()
+      .single()
+    if (error) {
+      console.error("[db] useWhitelistKey error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] useWhitelistKey exception:", e)
+    return null
+  }
 }
 
 export async function deleteWhitelistKey(id: string): Promise<boolean> {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("whitelist_keys")
-    .delete()
-    .eq("id", id)
-  return !error
+  try {
+    const supabase = getAdminClient()
+    const { error } = await supabase
+      .from("whitelist_keys")
+      .delete()
+      .eq("id", id)
+    if (error) {
+      console.error("[db] deleteWhitelistKey error:", error.message)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error("[db] deleteWhitelistKey exception:", e)
+    return false
+  }
 }
 
 // Script logs functions
 export async function addScriptLog(log: Omit<ScriptLog, "id" | "created_at">): Promise<ScriptLog | null> {
-  const supabase = await createClient()
-  const id = `log-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-  
-  const { data } = await supabase
-    .from("script_logs")
-    .insert({ id, ...log })
-    .select()
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const id = `log-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+    
+    const { data, error } = await supabase
+      .from("script_logs")
+      .insert({ 
+        id, 
+        ...log,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    if (error) {
+      console.error("[db] addScriptLog error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] addScriptLog exception:", e)
+    return null
+  }
 }
 
 export async function getScriptLogs(limit = 200): Promise<ScriptLog[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("script_logs")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit)
-  return data || []
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("script_logs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit)
+    if (error) {
+      console.error("[db] getScriptLogs error:", error.message)
+      return []
+    }
+    return data || []
+  } catch (e) {
+    console.error("[db] getScriptLogs exception:", e)
+    return []
+  }
 }
 
 // Pending scripts functions
 export async function queueScript(robloxUsername: string, script: string): Promise<PendingScript | null> {
-  const supabase = await createClient()
-  const id = `script-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-  
-  const { data } = await supabase
-    .from("pending_scripts")
-    .insert({ id, roblox_username: robloxUsername, script })
-    .select()
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const id = `script-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+    
+    const { data, error } = await supabase
+      .from("pending_scripts")
+      .insert({ 
+        id, 
+        roblox_username: robloxUsername, 
+        script,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    if (error) {
+      console.error("[db] queueScript error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] queueScript exception:", e)
+    return null
+  }
 }
 
 export async function getPendingScriptsForUser(robloxUsername: string): Promise<PendingScript[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("pending_scripts")
-    .select("*")
-    .ilike("roblox_username", robloxUsername)
-    .order("created_at", { ascending: true })
-  return data || []
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("pending_scripts")
+      .select("*")
+      .ilike("roblox_username", robloxUsername)
+      .order("created_at", { ascending: true })
+    if (error) {
+      console.error("[db] getPendingScriptsForUser error:", error.message)
+      return []
+    }
+    return data || []
+  } catch (e) {
+    console.error("[db] getPendingScriptsForUser exception:", e)
+    return []
+  }
 }
 
 export async function clearPendingScriptsForUser(robloxUsername: string): Promise<boolean> {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("pending_scripts")
-    .delete()
-    .ilike("roblox_username", robloxUsername)
-  return !error
+  try {
+    const supabase = getAdminClient()
+    const { error } = await supabase
+      .from("pending_scripts")
+      .delete()
+      .ilike("roblox_username", robloxUsername)
+    if (error) {
+      console.error("[db] clearPendingScriptsForUser error:", error.message)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error("[db] clearPendingScriptsForUser exception:", e)
+    return false
+  }
 }
 
 // Games functions
 export async function addGame(game: Omit<Game, "id" | "last_updated">): Promise<Game | null> {
-  const supabase = await createClient()
-  const id = `game-${Date.now()}`
-  
-  const { data } = await supabase
-    .from("games")
-    .upsert({ id, ...game, last_updated: new Date().toISOString() }, { onConflict: "place_id" })
-    .select()
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const id = `game-${Date.now()}`
+    
+    const { data, error } = await supabase
+      .from("games")
+      .upsert({ 
+        id, 
+        ...game, 
+        last_updated: new Date().toISOString() 
+      }, { onConflict: "place_id" })
+      .select()
+      .single()
+    if (error) {
+      console.error("[db] addGame error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] addGame exception:", e)
+    return null
+  }
 }
 
 export async function updateGame(placeId: string, updates: Partial<Game>): Promise<Game | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("games")
-    .update({ ...updates, last_updated: new Date().toISOString() })
-    .eq("place_id", placeId)
-    .select()
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("games")
+      .update({ ...updates, last_updated: new Date().toISOString() })
+      .eq("place_id", placeId)
+      .select()
+      .single()
+    if (error) {
+      console.error("[db] updateGame error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] updateGame exception:", e)
+    return null
+  }
 }
 
 export async function getAllGames(): Promise<Game[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("games")
-    .select("*")
-    .order("last_update", { ascending: false })
-  return data || []
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("games")
+      .select("*")
+      .order("last_updated", { ascending: false })
+    if (error) {
+      console.error("[db] getAllGames error:", error.message)
+      return []
+    }
+    return data || []
+  } catch (e) {
+    console.error("[db] getAllGames exception:", e)
+    return []
+  }
 }
 
 export async function deleteGame(placeId: string): Promise<boolean> {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("games")
-    .delete()
-    .eq("place_id", placeId)
-  return !error
+  try {
+    const supabase = getAdminClient()
+    const { error } = await supabase
+      .from("games")
+      .delete()
+      .eq("place_id", placeId)
+    if (error) {
+      console.error("[db] deleteGame error:", error.message)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error("[db] deleteGame exception:", e)
+    return false
+  }
 }
 
 // Blacklist functions
 export async function addToBlacklist(username: string, reason: string, blacklistedBy: string): Promise<BlacklistedUser | null> {
-  const supabase = await createClient()
-  const id = `bl-${Date.now()}`
-  
-  const { data } = await supabase
-    .from("blacklisted_users")
-    .insert({ id, username, reason, blacklisted_by: blacklistedBy })
-    .select()
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const id = `bl-${Date.now()}`
+    
+    const { data, error } = await supabase
+      .from("blacklisted_users")
+      .insert({ 
+        id, 
+        username, 
+        reason, 
+        blacklisted_by: blacklistedBy,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    if (error) {
+      console.error("[db] addToBlacklist error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] addToBlacklist exception:", e)
+    return null
+  }
 }
 
 export async function removeFromBlacklist(username: string): Promise<boolean> {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("blacklisted_users")
-    .delete()
-    .ilike("username", username)
-  return !error
+  try {
+    const supabase = getAdminClient()
+    const { error } = await supabase
+      .from("blacklisted_users")
+      .delete()
+      .ilike("username", username)
+    if (error) {
+      console.error("[db] removeFromBlacklist error:", error.message)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error("[db] removeFromBlacklist exception:", e)
+    return false
+  }
 }
 
 export async function isBlacklisted(username: string): Promise<boolean> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("blacklisted_users")
-    .select("id")
-    .ilike("username", username)
-    .single()
-  return !!data
+  try {
+    const supabase = getAdminClient()
+    const { data } = await supabase
+      .from("blacklisted_users")
+      .select("id")
+      .ilike("username", username)
+      .single()
+    return !!data
+  } catch {
+    return false
+  }
 }
 
 export async function getBlacklist(): Promise<BlacklistedUser[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("blacklisted_users")
-    .select("*")
-    .order("created_at", { ascending: false })
-  return data || []
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("blacklisted_users")
+      .select("*")
+      .order("created_at", { ascending: false })
+    if (error) {
+      console.error("[db] getBlacklist error:", error.message)
+      return []
+    }
+    return data || []
+  } catch (e) {
+    console.error("[db] getBlacklist exception:", e)
+    return []
+  }
 }
 
 // Chat functions
 export async function addChatMessage(username: string, message: string, role: string, avatar: string | null): Promise<ChatMessage | null> {
-  const supabase = await createClient()
-  const id = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-  
-  const { data } = await supabase
-    .from("chat_messages")
-    .insert({ id, username, message, role, avatar })
-    .select()
-    .single()
-  return data
+  try {
+    const supabase = getAdminClient()
+    const id = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+    
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .insert({ 
+        id, 
+        username, 
+        message, 
+        role, 
+        avatar,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    if (error) {
+      console.error("[db] addChatMessage error:", error.message)
+      return null
+    }
+    return data
+  } catch (e) {
+    console.error("[db] addChatMessage exception:", e)
+    return null
+  }
 }
 
 export async function getChatMessages(limit = 100): Promise<ChatMessage[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("chat_messages")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit)
-  return data || []
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit)
+    if (error) {
+      console.error("[db] getChatMessages error:", error.message)
+      return []
+    }
+    return data || []
+  } catch (e) {
+    console.error("[db] getChatMessages exception:", e)
+    return []
+  }
 }
 
 // Settings functions
 export async function getSetting(key: string): Promise<string | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("app_settings")
-    .select("value")
-    .eq("key", key)
-    .single()
-  return data?.value || null
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", key)
+      .single()
+    if (error && error.code !== "PGRST116") {
+      console.error("[db] getSetting error:", error.message)
+    }
+    return data?.value || null
+  } catch (e) {
+    console.error("[db] getSetting exception:", e)
+    return null
+  }
 }
 
 export async function setSetting(key: string, value: string): Promise<boolean> {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("app_settings")
-    .upsert({ key, value })
-  return !error
+  try {
+    const supabase = getAdminClient()
+    const { error } = await supabase
+      .from("app_settings")
+      .upsert({ key, value })
+    if (error) {
+      console.error("[db] setSetting error:", error.message)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error("[db] setSetting exception:", e)
+    return false
+  }
+}
+
+// Get or create webhook key
+export async function getOrCreateWebhookKey(): Promise<string> {
+  try {
+    const existing = await getSetting("webhook_key")
+    if (existing) return existing
+    
+    const newKey = `MOON-WH-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`
+    await setSetting("webhook_key", newKey)
+    return newKey
+  } catch (e) {
+    console.error("[db] getOrCreateWebhookKey exception:", e)
+    return `MOON-WH-${Date.now().toString(36).toUpperCase()}`
+  }
 }
 
 // Get whitelisted roblox usernames (for webhook)
 export async function getWhitelistedRobloxUsers(): Promise<string[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("moon_users")
-    .select("roblox_username")
-    .not("roblox_username", "is", null)
-    .neq("plan", "none")
-  
-  return (data || []).map(u => u.roblox_username).filter(Boolean) as string[]
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("moon_users")
+      .select("roblox_username")
+      .not("roblox_username", "is", null)
+      .neq("plan", "none")
+    
+    if (error) {
+      console.error("[db] getWhitelistedRobloxUsers error:", error.message)
+      return []
+    }
+    return (data || []).map(u => u.roblox_username).filter(Boolean) as string[]
+  } catch (e) {
+    console.error("[db] getWhitelistedRobloxUsers exception:", e)
+    return []
+  }
 }

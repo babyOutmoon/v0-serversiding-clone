@@ -7,7 +7,7 @@ import {
   getPendingScriptsForUser,
   clearPendingScriptsForUser,
   getWhitelistedRobloxUsers,
-  getSetting
+  getOrCreateWebhookKey
 } from "@/lib/db"
 
 // POST - Queue a script for execution
@@ -84,7 +84,7 @@ export async function GET(request: Request) {
 
   // Roblox script polling for pending scripts
   if (webhookKey && robloxUser) {
-    const storedKey = await getSetting("webhook_key")
+    const storedKey = await getOrCreateWebhookKey()
     if (webhookKey !== storedKey) {
       return NextResponse.json({ error: "Invalid webhook key" }, { status: 403 })
     }

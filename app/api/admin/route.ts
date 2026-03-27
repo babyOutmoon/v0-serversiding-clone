@@ -15,7 +15,7 @@ import {
   createWhitelistKey,
   getAllWhitelistKeys,
   deleteWhitelistKey as deleteKeyDb,
-  getSetting,
+  getOrCreateWebhookKey,
   getScriptLogs
 } from "@/lib/db"
 
@@ -122,7 +122,7 @@ export async function GET(request: Request) {
       if (!ownerOnly) {
         return NextResponse.json({ error: "Owner only" }, { status: 403 })
       }
-      const webhookKey = await getSetting("webhook_key")
+      const webhookKey = await getOrCreateWebhookKey()
       return NextResponse.json({ 
         webhookKey,
         webhookUrl: "/api/whitelist?webhookKey=" + webhookKey

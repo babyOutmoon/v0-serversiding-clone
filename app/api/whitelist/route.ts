@@ -5,7 +5,7 @@ import {
   getWhitelistKeyByKey,
   useWhitelistKey,
   getWhitelistedRobloxUsers,
-  getSetting,
+  getOrCreateWebhookKey,
   createUser,
   getAllUsers
 } from "@/lib/db"
@@ -142,7 +142,7 @@ export async function GET(request: Request) {
 
   // Webhook endpoint for Roblox to get whitelisted users
   if (webhookKey) {
-    const storedKey = await getSetting("webhook_key")
+    const storedKey = await getOrCreateWebhookKey()
     if (webhookKey !== storedKey) {
       return NextResponse.json({ error: "Invalid webhook key" }, { status: 403 })
     }

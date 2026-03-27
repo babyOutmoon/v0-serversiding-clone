@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { addGame, getAllGames, deleteGame, updateGame, getSetting } from "@/lib/db"
+import { addGame, getAllGames, deleteGame, updateGame, getOrCreateWebhookKey } from "@/lib/db"
 
 // POST - Receive game data from Roblox webhook
 export async function POST(request: Request) {
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     }
 
     // Validate webhook key
-    const storedKey = await getSetting("webhook_key")
+    const storedKey = await getOrCreateWebhookKey()
     if (!providedKey || providedKey !== storedKey) {
       return NextResponse.json({ error: "Invalid webhook key" }, { status: 401 })
     }
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
 
   // Simple admin verification
   if (action === "getKey" && adminKey === "owner-access") {
-    const webhookKey = await getSetting("webhook_key")
+    const webhookKey = await getOrCreateWebhookKey()
     return NextResponse.json({ 
       webhookKey,
       webhookUrl: "/api/webhook",
