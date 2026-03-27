@@ -197,6 +197,7 @@ export default function DashboardPage() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [webhookKey, setWebhookKey] = useState("")
+  const [siteUrl, setSiteUrl] = useState("https://moonss.vercel.app")
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState("")
   const [chatLoading, setChatLoading] = useState(false)
@@ -480,6 +481,11 @@ setChatLoading(false)
     document.documentElement.setAttribute("data-theme", theme)
     localStorage.setItem("moonss_theme", theme)
   }
+
+  // Set site URL on mount
+  useEffect(() => {
+    setSiteUrl(window.location.origin)
+  }, [])
 
   // Load theme on mount
   useEffect(() => {
@@ -2474,10 +2480,10 @@ const sidebarItems = [
                     </div>
                     <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-3 border border-border/30">
                       <code className="flex-1 text-sm font-mono text-foreground break-all">
-                        {typeof window !== "undefined" ? `${window.location.origin}${robloxWebhookUrl}` : robloxWebhookUrl || "Loading..."}
+                        {`${siteUrl}${robloxWebhookUrl}`}
                       </code>
                       <button
-                        onClick={() => copyToClipboard(typeof window !== "undefined" ? `${window.location.origin}${robloxWebhookUrl}` : robloxWebhookUrl, "roblox-webhook")}
+                        onClick={() => copyToClipboard(`${siteUrl}${robloxWebhookUrl}`, "roblox-webhook")}
                         className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
                       >
                         {copied === "roblox-webhook" ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
@@ -2514,9 +2520,9 @@ const sidebarItems = [
                       Webhook URL
                     </h3>
                     <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-3 border border-border/30">
-                      <code className="flex-1 text-sm font-mono text-foreground">{typeof window !== "undefined" ? `${window.location.origin}/api/webhook` : "/api/webhook"}</code>
+                      <code className="flex-1 text-sm font-mono text-foreground">{`${siteUrl}/api/webhook`}</code>
                       <button
-                        onClick={() => copyToClipboard(typeof window !== "undefined" ? `${window.location.origin}/api/webhook` : "/api/webhook", "webhook-url")}
+                        onClick={() => copyToClipboard(`${siteUrl}/api/webhook`, "webhook-url")}
                         className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
                       >
                         {copied === "webhook-url" ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
@@ -2536,7 +2542,7 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
 
-local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}/api/webhook"
+local WEBHOOK_URL = "${siteUrl}/api/webhook"
 local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
 
 -- Add game on server start
@@ -2583,7 +2589,7 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
 
-local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}/api/webhook"
+local WEBHOOK_URL = "${siteUrl}/api/webhook"
 local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
 
 local function addGame()
@@ -2641,7 +2647,7 @@ spawn(updatePlayers)`, "lua-script")}
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
-local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}"
+local WEBHOOK_URL = "${siteUrl}"
 local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
 
 local WHITELIST_URL = WEBHOOK_URL .. "/api/whitelist?webhookKey=" .. WEBHOOK_KEY
@@ -2706,7 +2712,7 @@ print("[Moon] Executor loaded!")`}</pre>
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
-local WEBHOOK_URL = "${typeof window !== "undefined" ? window.location.origin : "YOUR_DOMAIN"}"
+local WEBHOOK_URL = "${siteUrl}"
 local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
 
 local WHITELIST_URL = WEBHOOK_URL .. "/api/whitelist?webhookKey=" .. WEBHOOK_KEY
