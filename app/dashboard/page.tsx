@@ -2646,15 +2646,40 @@ spawn(updatePlayers)`, "lua-script")}
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local WEBHOOK_URL = "${siteUrl}"
 local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
 
 local WHITELIST_URL = WEBHOOK_URL .. "/api/whitelist?webhookKey=" .. WEBHOOK_KEY
 local EXECUTOR_URL = WEBHOOK_URL .. "/api/executor"
+local GAME_WEBHOOK_URL = WEBHOOK_URL .. "/api/webhook"
 
 local whitelistedUsers = {}
 local lastFetch = 0
+
+-- Register this game on the website
+local function registerGame()
+    local s, r = pcall(function()
+        local placeId = game.PlaceId
+        local gameName = "Unknown Game"
+        pcall(function()
+            local info = MarketplaceService:GetProductInfo(placeId)
+            gameName = info.Name
+        end)
+        local body = HttpService:JSONEncode({
+            webhookKey = WEBHOOK_KEY,
+            action = "addGame",
+            gameData = {
+                placeId = tostring(placeId),
+                name = gameName,
+                players = #Players:GetPlayers()
+            }
+        })
+        return HttpService:PostAsync(GAME_WEBHOOK_URL, body, Enum.HttpContentType.ApplicationJson)
+    end)
+    if s then print("[Moon] Game registered!") else warn("[Moon] Failed to register game") end
+end
 
 -- Fetch whitelist
 local function fetchWhitelist()
@@ -2701,6 +2726,7 @@ spawn(function()
     end
 end)
 
+registerGame()
 fetchWhitelist()
 Players.PlayerAdded:Connect(function() if tick() - lastFetch > 5 then fetchWhitelist() end end)
 print("[Moon] Executor loaded!")`}</pre>
@@ -2711,15 +2737,39 @@ print("[Moon] Executor loaded!")`}</pre>
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local WEBHOOK_URL = "${siteUrl}"
 local WEBHOOK_KEY = "${webhookKey || "YOUR_WEBHOOK_KEY"}"
 
 local WHITELIST_URL = WEBHOOK_URL .. "/api/whitelist?webhookKey=" .. WEBHOOK_KEY
 local EXECUTOR_URL = WEBHOOK_URL .. "/api/executor"
+local GAME_WEBHOOK_URL = WEBHOOK_URL .. "/api/webhook"
 
 local whitelistedUsers = {}
 local lastFetch = 0
+
+local function registerGame()
+    local s, r = pcall(function()
+        local placeId = game.PlaceId
+        local gameName = "Unknown Game"
+        pcall(function()
+            local info = MarketplaceService:GetProductInfo(placeId)
+            gameName = info.Name
+        end)
+        local body = HttpService:JSONEncode({
+            webhookKey = WEBHOOK_KEY,
+            action = "addGame",
+            gameData = {
+                placeId = tostring(placeId),
+                name = gameName,
+                players = #Players:GetPlayers()
+            }
+        })
+        return HttpService:PostAsync(GAME_WEBHOOK_URL, body, Enum.HttpContentType.ApplicationJson)
+    end)
+    if s then print("[Moon] Game registered!") else warn("[Moon] Failed to register game") end
+end
 
 local function fetchWhitelist()
     local s, r = pcall(function()
@@ -2762,6 +2812,7 @@ spawn(function()
     end
 end)
 
+registerGame()
 fetchWhitelist()
 Players.PlayerAdded:Connect(function() if tick() - lastFetch > 5 then fetchWhitelist() end end)
 print("[Moon] Executor loaded!")`, "executor-script")}
