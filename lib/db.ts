@@ -694,3 +694,97 @@ export async function getWhitelistedRobloxUsers(): Promise<string[]> {
     return []
   }
 }
+
+// ============ EMAIL VERIFICATION ============
+
+export type EmailVerification = {
+  id: string
+  email: string
+  code: string
+  username: string
+  password: string
+  expires_at: string
+  created_at: string
+}
+
+export async function createEmailVerification(data: {
+  email: string
+  code: string
+  username: string
+  password: string
+}): Promise<EmailVerification | null> {
+  try {
+    const supabase = getAdminClient()
+    const id = `verify-${Date.now()}`
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes
+    
+    // Delete any existing verifications for this email
+    await supabase.from("email_verifications").delete().eq("email", data.email)
+    
+    const { data: result, error } = await supabase
+      .from("email_verifications")
+      .insert({
+        id,
+        email: data.email,
+        code: data.code,
+        username: data.username,
+        password: data.password,
+        expires_at: expiresAt,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    
+    if (error) {
+      console.error("[db] createEmailVerification error:", error.message)
+      return null
+    }
+    return result
+  } catch (e) {
+    console.error("[db] createEmailVerification exception:", e)
+    return null
+  }
+}
+
+export async function verifyEmailCode(email: string, code: string): Promise<EmailVerification | null> {
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("email_verifications")
+      .select("*")
+      .eq("email", email)
+      .eq("code", code)
+      .single()
+    
+    if (error || !data) {
+      return null
+    }
+    
+    // Check if expired
+    if (new Date(data.expires_at) < new Date()) {
+      // Delete expired verification
+      await supabase.from("email_verifications").delete().eq("id", data.id)
+      return null
+    }
+    
+    return data
+  } catch (e) {
+    console.error("[db] verifyEmailCode exception:", e)
+    return null
+  }
+}
+
+export async function deleteEmailVerification(id: string): Promise<boolean> {
+  try {
+    const supabase = getAdminClient()
+    const { error } = await supabase
+      .from("email_verifications")
+      .delete()
+      .eq("id", id)
+    
+    return !error
+  } catch (e) {
+    console.error("[db] deleteEmailVerification exception:", e)
+    return false
+  }
+}
