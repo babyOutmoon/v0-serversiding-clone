@@ -14,6 +14,7 @@ export async function GET() {
         status: g.status,
         imageUrl: g.thumbnail,
         placeId: g.place_id,
+        gameUrl: `https://www.roblox.com/games/${g.place_id}`,
       }))
     })
   } catch (error) {

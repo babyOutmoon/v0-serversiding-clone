@@ -38,8 +38,7 @@ import {
   Lock,
   Camera,
   Webhook,
-  MessageCircle,
-  Send,
+  
   Terminal,
   Palette,
   FileCode,
@@ -98,7 +97,7 @@ type StaffAccount = {
   isOnline: boolean
 }
 
-type Tab = "home" | "games" | "executor" | "chat" | "whitelist" | "tos" | "settings" | "admin"
+type Tab = "home" | "games" | "executor" | "whitelist" | "tos" | "settings" | "admin"
 
 type ScriptLog = {
   id: string
@@ -107,16 +106,6 @@ type ScriptLog = {
   script: string
   gameId: string
   gameName: string
-  timestamp: string
-}
-
-type ChatMessage = {
-  id: string
-  username: string
-  avatar: string | null
-  plan: UserPlan
-  role: "owner" | "staff" | "user"
-  message: string
   timestamp: string
 }
 
@@ -198,9 +187,6 @@ export default function DashboardPage() {
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [webhookKey, setWebhookKey] = useState("")
   const [siteUrl, setSiteUrl] = useState("https://moonss.vercel.app")
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
-  const [chatInput, setChatInput] = useState("")
-  const [chatLoading, setChatLoading] = useState(false)
   const [whitelistKeys, setWhitelistKeys] = useState<WhitelistKey[]>([])
   const [keyInput, setKeyInput] = useState("")
   const [robloxWebhookUrl, setRobloxWebhookUrl] = useState("")
@@ -289,43 +275,6 @@ const fetchAdminData = useCallback(async () => {
       // Ignore
     }
   }, [isOwner])
-
-  // Fetch chat messages
-  const fetchChatMessages = useCallback(async () => {
-    try {
-      const res = await fetch("/api/chat")
-      const data = await res.json()
-      if (data.messages) setChatMessages(data.messages)
-    } catch {
-      // Ignore
-    }
-  }, [])
-
-  // Send chat message
-  const sendChatMessage = async () => {
-    if (!chatInput.trim() || !user || chatLoading) return
-    setChatLoading(true)
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: user.username,
-          message: chatInput.trim(),
-        }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setChatInput("")
-        fetchChatMessages()
-      } else {
-        showToast(data.error || "Failed to send message", "error")
-      }
-    } catch {
-      showToast("Something went wrong", "error")
-    }
-setChatLoading(false)
-  }
 
   // Generate whitelist key
   const generateKey = async (plan: "standard" | "premium") => {
@@ -638,14 +587,7 @@ setChatLoading(false)
     }
   }, [activeTab, games.length, refreshGameData])
 
-  // Fetch chat messages when chat tab is active
-  useEffect(() => {
-    if (user && activeTab === "chat") {
-      fetchChatMessages()
-      const interval = setInterval(fetchChatMessages, 5000)
-      return () => clearInterval(interval)
-    }
-}, [user, activeTab, fetchChatMessages])
+
 
   // Refresh all data every 5 minutes to keep in sync with database
   useEffect(() => {
@@ -1085,7 +1027,7 @@ const sidebarItems = [
     { id: "home" as Tab, label: "Home", icon: Home },
     { id: "games" as Tab, label: "Games", icon: Gamepad2 },
     { id: "executor" as Tab, label: "Executor", icon: Terminal },
-    { id: "chat" as Tab, label: "Chat", icon: MessageCircle },
+    
     { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
     { id: "tos" as Tab, label: "ToS", icon: FileText },
     { id: "settings" as Tab, label: "Settings", icon: Settings },
@@ -1712,90 +1654,7 @@ const sidebarItems = [
             </div>
           )}
 
-          {/* Chat Tab */}
-          {activeTab === "chat" && (
-            <div className="flex flex-col h-[calc(100vh-180px)]">
-              <div className="mb-4">
-                <h2 className="text-2xl font-bold text-foreground">Community Chat</h2>
-                <p className="text-muted-foreground mt-1">Chat with other Moon users</p>
-              </div>
-              
-              {/* Messages */}
-              <div className="flex-1 bg-card rounded-xl border border-border/30 p-4 overflow-y-auto mb-4 space-y-4">
-                {chatMessages.length === 0 ? (
-                  <div className="text-center text-muted-foreground py-8">
-                    No messages yet. Be the first to say something!
-                  </div>
-                ) : (
-                  chatMessages.map((msg) => (
-                    <div key={msg.id} className="flex gap-3">
-                      <div className="h-10 w-10 rounded-full overflow-hidden bg-secondary flex-shrink-0">
-                        {msg.avatar ? (
-                          <img src={msg.avatar} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center">
-                            {msg.role === "owner" ? (
-                              <Crown className="h-5 w-5 text-primary" />
-                            ) : msg.role === "staff" ? (
-                              <Shield className="h-5 w-5 text-accent" />
-                            ) : (
-                              <span className="text-sm font-bold text-primary">
-                                {msg.username.charAt(0).toUpperCase()}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-foreground">{msg.username}</span>
-                          {msg.role === "owner" && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/20 text-primary">OWNER</span>
-                          )}
-                          {msg.role === "staff" && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-accent/20 text-accent">STAFF</span>
-                          )}
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            msg.plan === "premium" ? "bg-primary/20 text-primary" :
-                            msg.plan === "standard" ? "bg-green-500/20 text-green-400" :
-                            "bg-muted text-muted-foreground"
-                          }`}>
-                            {msg.plan.toUpperCase()}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(msg.timestamp).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        <p className="text-foreground mt-1 break-words">{msg.message}</p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              
-              {/* Input */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendChatMessage()}
-                  placeholder="Type a message..."
-                  className="flex-1 px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  maxLength={500}
-                />
-                <button
-                  onClick={sendChatMessage}
-                  disabled={chatLoading || !chatInput.trim()}
-                  className="px-4 py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {chatLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-                </button>
-              </div>
-            </div>
-          )}
-  
-{/* Whitelist Tab */}
+          {/* Whitelist Tab */}
           {activeTab === "whitelist" && (
             <div className="space-y-6 max-w-2xl">
               <div>
