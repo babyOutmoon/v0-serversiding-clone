@@ -1318,13 +1318,13 @@ const sidebarItems = [
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
-          {sidebarItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                activeTab === item.id
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
+{sidebarItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${
+                      activeTab === item.id
+                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               }`}
             >
@@ -1449,7 +1449,7 @@ const sidebarItems = [
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <button
                     onClick={() => setActiveTab("games")}
-                    className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all"
+                    className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] hover:shadow-lg hover:shadow-primary/10"
                   >
                     <div className="flex items-center gap-4">
                       <div className="p-3 rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
@@ -1463,7 +1463,7 @@ const sidebarItems = [
                   </button>
                   <button
                     onClick={() => setActiveTab("whitelist")}
-                    className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all"
+                    className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] hover:shadow-lg hover:shadow-primary/10"
                   >
                     <div className="flex items-center gap-4">
                       <div className="p-3 rounded-lg bg-green-500/10 text-green-500 group-hover:bg-green-500 group-hover:text-white transition-all">
@@ -1478,7 +1478,7 @@ const sidebarItems = [
                   {isAdmin && (
                     <button
                       onClick={() => setActiveTab("admin")}
-                      className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all"
+                      className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] hover:shadow-lg hover:shadow-primary/10"
                     >
                       <div className="flex items-center gap-4">
                         <div className="p-3 rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-white transition-all">
@@ -1622,21 +1622,21 @@ const sidebarItems = [
                 <button
                   onClick={() => executeScript()}
                   disabled={executorLoading}
-                  className="flex-1 py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="flex-1 py-3 rounded-lg bg-primary text-primary-foreground font-semibold btn-animated btn-ripple disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {executorLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
                   Execute
                 </button>
                 <button
                   onClick={() => setScriptInput("")}
-                  className="px-6 py-3 rounded-lg bg-secondary border border-border/30 text-foreground font-semibold hover:bg-secondary/80 transition-all"
+                  className="px-6 py-3 rounded-lg bg-secondary border border-border/30 text-foreground font-semibold btn-animated btn-ripple"
                 >
                   Clear
                 </button>
                 <button
                   onClick={() => executeScript("r6")}
                   disabled={executorLoading}
-                  className="px-6 py-3 rounded-lg bg-green-500/20 border border-green-500/30 text-green-400 font-semibold hover:bg-green-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-3 rounded-lg bg-green-500/20 border border-green-500/30 text-green-400 font-semibold btn-animated btn-ripple disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   R6
                 </button>
@@ -1771,7 +1771,7 @@ const sidebarItems = [
                     <button
                       onClick={handleLinkRoblox}
                       disabled={whitelistLoading || !robloxInput.trim()}
-                      className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all disabled:opacity-50"
+                      className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-semibold btn-animated btn-ripple disabled:opacity-50"
                     >
                       {whitelistLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : user.robloxUsername ? "Change Roblox Account" : "Link Account"}
                     </button>
@@ -2087,7 +2087,7 @@ const sidebarItems = [
                                 <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">{u.ip}</code>
                                 <button
                                   onClick={() => copyToClipboard(u.ip, `ip-${u.id}`)}
-                                  className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                                  className="p-1 rounded text-muted-foreground hover:text-foreground transition-all duration-200 hover:scale-125 active:scale-95"
                                 >
                                   {copied === `ip-${u.id}` ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
                                 </button>
@@ -2806,7 +2806,7 @@ print("[Moon] Executor loaded!")`, "executor-script")}
                   <p className="text-muted-foreground">{executorModal.message}</p>
                   <button
                     onClick={() => setExecutorModal({ ...executorModal, show: false })}
-                    className="mt-6 px-8 py-3 rounded-lg bg-green-500 text-white font-semibold hover:bg-green-600 transition-all"
+                    className="mt-6 px-8 py-3 rounded-lg bg-green-500 text-white font-semibold btn-animated btn-ripple"
                   >
                     Done
                   </button>
@@ -2821,7 +2821,7 @@ print("[Moon] Executor loaded!")`, "executor-script")}
                   <p className="text-muted-foreground">{executorModal.message}</p>
                   <button
                     onClick={() => setExecutorModal({ ...executorModal, show: false })}
-                    className="mt-6 px-8 py-3 rounded-lg bg-destructive text-white font-semibold hover:bg-destructive/90 transition-all"
+                    className="mt-6 px-8 py-3 rounded-lg bg-destructive text-white font-semibold btn-animated btn-ripple"
                   >
                     Close
                   </button>
