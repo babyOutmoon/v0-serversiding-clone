@@ -42,7 +42,7 @@ import {
   Terminal,
   Palette,
   FileCode,
-  ScrollText
+  
 } from "lucide-react"
 
 type UserPlan = "none" | "standard" | "premium"
@@ -97,17 +97,9 @@ type StaffAccount = {
   isOnline: boolean
 }
 
-type Tab = "home" | "games" | "executor" | "whitelist" | "tos" | "settings" | "admin"
+type Tab = "home" | "games" | "whitelist" | "tos" | "settings" | "admin"
 
-type ScriptLog = {
-  id: string
-  username: string
-  robloxUsername: string
-  script: string
-  gameId: string
-  gameName: string
-  timestamp: string
-}
+
 
 type WhitelistKey = {
   key: string
@@ -190,10 +182,8 @@ export default function DashboardPage() {
   const [whitelistKeys, setWhitelistKeys] = useState<WhitelistKey[]>([])
   const [keyInput, setKeyInput] = useState("")
   const [robloxWebhookUrl, setRobloxWebhookUrl] = useState("")
-  const [scriptInput, setScriptInput] = useState("")
-  const [executorLoading, setExecutorLoading] = useState(false)
-  const [executorModal, setExecutorModal] = useState<{ show: boolean; status: "loading" | "success" | "error"; message: string }>({ show: false, status: "loading", message: "" })
-  const [scriptLogs, setScriptLogs] = useState<ScriptLog[]>([])
+  
+  
   const [colorTheme, setColorTheme] = useState<string>("blue")
 
   const isOwner = user?.role === "owner"
@@ -254,12 +244,17 @@ const fetchAdminData = useCallback(async () => {
     setLoading(false)
   }, [user, isAdmin, isOwner])
 
-  // Fetch games for all users
-  const fetchGames = useCallback(async () => {
+  // Fetch games for all users (sorted by players, filtering out games with 0 players on refresh)
+  const fetchGames = useCallback(async (filterEmpty = false) => {
     try {
       const res = await fetch("/api/games")
       const data = await res.json()
-      if (data.games) setGames(data.games)
+      if (data.games) {
+        let gamesList = data.games as Game[]
+        // Sort by players (most first)
+        gamesList = gamesList.sort((a, b) => b.players - a.players)
+        setGames(gamesList)
+      }
     } catch {
       // Ignore
     }
@@ -362,72 +357,6 @@ const fetchAdminData = useCallback(async () => {
   }
 
   // Execute script
-  const executeScript = async (scriptType?: "r6") => {
-    if (!user) {
-      setExecutorModal({ show: true, status: "error", message: "Please log in first" })
-      return
-    }
-    
-    // Check plan first - show message if no plan
-    if (userPlan === "none") {
-      setExecutorModal({ show: true, status: "error", message: "You need an active plan to use the executor. Go to Whitelist to redeem a key." })
-      return
-    }
-    
-    // Check roblox link
-    if (!user.robloxUsername) {
-      setExecutorModal({ show: true, status: "error", message: "You need to link your Roblox account first. Go to Whitelist." })
-      return
-    }
-
-    let script = scriptInput.trim()
-    if (scriptType === "r6") {
-      script = `require(3436957371):r6("${user.robloxUsername}")`
-    }
-    
-    if (!script) {
-      setExecutorModal({ show: true, status: "error", message: "Please enter a script" })
-      return
-    }
-
-    // Show loading modal
-    setExecutorModal({ show: true, status: "loading", message: "Queuing script for execution..." })
-    setExecutorLoading(true)
-    
-    try {
-      const res = await fetch("/api/executor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: user.username,
-          script,
-        }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setExecutorModal({ show: true, status: "success", message: `Script queued successfully! It will execute when "${user.robloxUsername}" is detected in an infected game.` })
-        if (!scriptType) setScriptInput("")
-      } else {
-        setExecutorModal({ show: true, status: "error", message: data.error || "Failed to queue script" })
-      }
-    } catch {
-      setExecutorModal({ show: true, status: "error", message: "Something went wrong. Please try again." })
-    }
-    setExecutorLoading(false)
-  }
-
-  // Fetch script logs (admin only)
-  const fetchScriptLogs = useCallback(async () => {
-    if (!user || !isAdmin) return
-    try {
-      const res = await fetch(`/api/executor?admin=${user.username}`)
-      const data = await res.json()
-      if (data.logs) setScriptLogs(data.logs)
-    } catch {
-      // Ignore
-    }
-  }, [user, isAdmin])
-
   // Theme handling
   const changeTheme = (theme: string) => {
     setColorTheme(theme)
@@ -559,10 +488,9 @@ const fetchAdminData = useCallback(async () => {
   useEffect(() => {
     if (user && isAdmin) {
       fetchAdminData()
-      fetchScriptLogs()
       if (isOwner) fetchWebhookKey()
     }
-  }, [user, isAdmin, isOwner, fetchAdminData, fetchWebhookKey, fetchScriptLogs])
+  }, [user, isAdmin, isOwner, fetchAdminData, fetchWebhookKey])
 
   // Also refresh when switching to admin tab
   useEffect(() => {
@@ -572,17 +500,23 @@ const fetchAdminData = useCallback(async () => {
   }, [activeTab, user, isAdmin, fetchAdminData])
 
   useEffect(() => {
-    if (user && activeTab === "games") {
+    if (user && (activeTab === "games" || activeTab === "home")) {
       fetchGames()
     }
   }, [user, activeTab, fetchGames])
-
-  // Fetch games for executor tab too
+  
+  // Live refresh stats on home tab every 30 seconds
   useEffect(() => {
-    if (user && activeTab === "executor" && games.length === 0) {
-      fetchGames()
+    if (user && activeTab === "home") {
+      const interval = setInterval(() => {
+        fetchGames()
+        if (isAdmin) fetchAdminData()
+      }, 30000)
+      return () => clearInterval(interval)
     }
-  }, [user, activeTab, games.length, fetchGames])
+  }, [user, activeTab, fetchGames, fetchAdminData, isAdmin])
+
+  
 
   useEffect(() => {
     if (activeTab === "games" && games.length > 0) {
@@ -601,14 +535,13 @@ const fetchAdminData = useCallback(async () => {
       fetchGames()
       if (isAdmin) {
         fetchAdminData()
-        fetchScriptLogs()
       }
     }
 
     // Refresh every 5 minutes (300000ms)
     const interval = setInterval(refreshAllData, 300000)
     return () => clearInterval(interval)
-  }, [user, isAdmin, fetchGames, fetchAdminData, fetchScriptLogs])
+  }, [user, isAdmin, fetchGames, fetchAdminData])
   
   useEffect(() => {
     if (!user) return
@@ -1030,7 +963,7 @@ const fetchAdminData = useCallback(async () => {
 const sidebarItems = [
     { id: "home" as Tab, label: "Home", icon: Home },
     { id: "games" as Tab, label: "Games", icon: Gamepad2 },
-    { id: "executor" as Tab, label: "Executor", icon: Terminal },
+    
     
     { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
     { id: "tos" as Tab, label: "ToS", icon: FileText },
@@ -1425,7 +1358,7 @@ const sidebarItems = [
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                  { label: "Games Available", value: `${games.length}+`, icon: Gamepad2, color: "text-primary" },
+                  { label: "Infected Games", value: `${games.length}`, icon: Gamepad2, color: "text-primary" },
                   { label: "Total Players", value: formatPlayers(games.reduce((acc, g) => acc + g.players, 0)), icon: Users, color: "text-green-500" },
                   { label: "Active Users", value: `${adminUsers.filter(u => u.isOnline).length}`, icon: Zap, color: "text-yellow-500" },
                   { label: "Uptime", value: "99.9%", icon: Clock, color: "text-accent" },
@@ -1442,6 +1375,26 @@ const sidebarItems = [
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* How It Works Info */}
+              <div className="glass rounded-xl border border-primary/30 bg-primary/5 p-6">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 rounded-lg bg-primary/20">
+                    <Zap className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-foreground mb-2">How Moon Works</h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      When you join an infected game, a <span className="text-primary font-semibold">GUI will automatically appear</span> on your screen. 
+                      This GUI lets you execute scripts, use features, and more - all server-side!
+                    </p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      <span>Stats update every 30 seconds</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -1593,66 +1546,6 @@ const sidebarItems = [
                       </div>
                     </div>
                   ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Executor Tab */}
-          {activeTab === "executor" && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-bold text-foreground">Script Executor</h2>
-                <p className="text-muted-foreground mt-1">Execute scripts on infected games</p>
-              </div>
-
-              {/* Script Editor - Always show */}
-              <div className="glass rounded-xl border border-border/30 p-4">
-                <label className="block text-sm font-medium text-foreground mb-2">Script</label>
-                <textarea
-                  value={scriptInput}
-                  onChange={(e) => setScriptInput(e.target.value)}
-                  placeholder="Enter your Lua script here..."
-                  className="w-full h-48 px-4 py-3 rounded-lg bg-secondary border border-border/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm resize-none"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => executeScript()}
-                  disabled={executorLoading}
-                  className="flex-1 py-3 rounded-lg bg-primary text-primary-foreground font-semibold btn-animated btn-ripple disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {executorLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
-                  Execute
-                </button>
-                <button
-                  onClick={() => setScriptInput("")}
-                  className="px-6 py-3 rounded-lg bg-secondary border border-border/30 text-foreground font-semibold btn-animated btn-ripple"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={() => executeScript("r6")}
-                  disabled={executorLoading}
-                  className="px-6 py-3 rounded-lg bg-green-500/20 border border-green-500/30 text-green-400 font-semibold btn-animated btn-ripple disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  R6
-                </button>
-              </div>
-
-              {/* Status Info */}
-              {user?.robloxUsername && hasAccess && (
-                <div className="glass rounded-xl border border-green-500/30 p-4 bg-green-500/5">
-                  <div className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-green-500" />
-                    <div>
-                      <p className="text-sm text-foreground">
-                        Scripts will be executed when <span className="font-semibold text-primary">{user.robloxUsername}</span> is found in an infected game.
-                      </p>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -2009,7 +1902,7 @@ const sidebarItems = [
 {[
                   { id: "users", label: "Users", icon: Users },
                   { id: "blacklist", label: "Blacklist", icon: UserX },
-                  { id: "logs", label: "Script Logs", icon: ScrollText },
+                  { id: "whitelist", label: "Whitelist", icon: Check },
                   ...(isOwner ? [{ id: "keys", label: "Keys", icon: Key }] : []),
                   ...(isOwner ? [{ id: "webhooks", label: "Webhooks", icon: Globe }] : []),
                   ...(isOwner ? [{ id: "staff", label: "Staff", icon: Shield }] : []),
@@ -2174,53 +2067,111 @@ const sidebarItems = [
               </div>
               )}
 
-              {/* Script Logs Tab */}
-              {adminTab === "logs" && (
+              {/* Whitelist Management */}
+              {adminTab === "whitelist" && (
                 <div className="space-y-4">
                   <div className="glass rounded-xl border border-border/30 overflow-hidden">
                     <div className="p-4 border-b border-border/30 flex items-center justify-between">
                       <h3 className="font-semibold text-foreground flex items-center gap-2">
-                        <ScrollText className="h-5 w-5 text-primary" />
-                        Script Execution Logs ({scriptLogs.length})
+                        <Check className="h-5 w-5 text-green-500" />
+                        Whitelisted Users ({adminUsers.filter(u => u.robloxUsername && u.plan !== "none").length})
                       </h3>
-                      <button
-                        onClick={fetchScriptLogs}
-                        className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                      </button>
                     </div>
                     <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                       <table className="w-full">
                         <thead className="sticky top-0 bg-muted/50">
                           <tr className="border-b border-border/30">
-                            <th className="text-left p-3 text-sm font-semibold text-foreground">User</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Username</th>
                             <th className="text-left p-3 text-sm font-semibold text-foreground">Roblox</th>
-                            <th className="text-left p-3 text-sm font-semibold text-foreground">Game</th>
-                            <th className="text-left p-3 text-sm font-semibold text-foreground">Script</th>
-                            <th className="text-left p-3 text-sm font-semibold text-foreground">Time</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Plan</th>
+                            <th className="text-left p-3 text-sm font-semibold text-foreground">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {scriptLogs.length === 0 ? (
+                          {adminUsers.filter(u => u.robloxUsername && u.plan !== "none").length === 0 ? (
                             <tr>
-                              <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                                No script logs yet
+                              <td colSpan={4} className="p-8 text-center text-muted-foreground">
+                                No whitelisted users yet
                               </td>
                             </tr>
                           ) : (
-                            scriptLogs.map((log) => (
-                              <tr key={log.id} className="border-b border-border/30 last:border-0">
-                                <td className="p-3 text-sm text-foreground">{log.username}</td>
-                                <td className="p-3 text-sm text-primary">{log.robloxUsername}</td>
-                                <td className="p-3 text-sm text-muted-foreground">{log.gameName}</td>
+                            adminUsers.filter(u => u.robloxUsername && u.plan !== "none").map((u) => (
+                              <tr key={u.id} className="border-b border-border/30 last:border-0 hover:bg-muted/30 transition-colors">
                                 <td className="p-3">
-                                  <code className="text-xs font-mono bg-muted px-2 py-1 rounded text-foreground max-w-xs truncate block">
-                                    {log.script.length > 50 ? log.script.substring(0, 50) + "..." : log.script}
-                                  </code>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-foreground">{u.username}</span>
+                                    {u.role === "owner" && <Crown className="h-4 w-4 text-primary" />}
+                                    {u.role === "staff" && <Shield className="h-4 w-4 text-accent" />}
+                                  </div>
                                 </td>
-                                <td className="p-3 text-xs text-muted-foreground">
-                                  {new Date(log.timestamp).toLocaleString()}
+                                <td className="p-3 text-primary font-medium">{u.robloxUsername}</td>
+                                <td className="p-3">
+                                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                    u.plan === "premium" ? "bg-primary/20 text-primary" : "bg-green-500/20 text-green-400"
+                                  }`}>
+                                    {u.plan.toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex items-center gap-2">
+                                    {isOwner && u.role !== "owner" && (
+                                      <>
+                                        <button
+                                          onClick={async () => {
+                                            const newRoblox = prompt("Enter new Roblox username:", u.robloxUsername || "")
+                                            if (newRoblox !== null) {
+                                              try {
+                                                const res = await fetch("/api/admin", {
+                                                  method: "PATCH",
+                                                  headers: { "Content-Type": "application/json" },
+                                                  body: JSON.stringify({ userId: u.id, robloxUsername: newRoblox || null, adminUsername: user.username }),
+                                                })
+                                                const data = await res.json()
+                                                if (data.success) {
+                                                  showToast("Roblox username updated", "success")
+                                                  fetchAdminData()
+                                                } else {
+                                                  showToast(data.error || "Failed to update", "error")
+                                                }
+                                              } catch {
+                                                showToast("Failed to update", "error")
+                                              }
+                                            }
+                                          }}
+                                          className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-200 hover:scale-110 active:scale-95"
+                                          title="Edit Roblox username"
+                                        >
+                                          <Edit3 className="h-4 w-4" />
+                                        </button>
+                                        <button
+                                          onClick={async () => {
+                                            if (confirm(`Remove ${u.username} from whitelist? This will unlink their Roblox account.`)) {
+                                              try {
+                                                const res = await fetch("/api/admin", {
+                                                  method: "PATCH",
+                                                  headers: { "Content-Type": "application/json" },
+                                                  body: JSON.stringify({ userId: u.id, robloxUsername: null, adminUsername: user.username }),
+                                                })
+                                                const data = await res.json()
+                                                if (data.success) {
+                                                  showToast("User removed from whitelist", "success")
+                                                  fetchAdminData()
+                                                } else {
+                                                  showToast(data.error || "Failed to remove", "error")
+                                                }
+                                              } catch {
+                                                showToast("Failed to remove", "error")
+                                              }
+                                            }
+                                          }}
+                                          className="p-1.5 rounded text-destructive hover:bg-destructive/20 transition-all duration-200 hover:scale-110 active:scale-95"
+                                          title="Remove from whitelist"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             ))
@@ -2783,54 +2734,6 @@ print("[Moon] Executor loaded!")`, "executor-script")}
         </div>
       </main>
 
-      {/* Executor Modal */}
-      {executorModal.show && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="glass rounded-2xl border border-border/50 p-8 max-w-md w-full mx-4 animate-scale-in">
-            <div className="text-center">
-              {executorModal.status === "loading" && (
-                <>
-                  <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
-                    <Loader2 className="h-8 w-8 text-primary animate-spin" />
-                  </div>
-                  <h3 className="text-xl font-bold text-foreground mb-2">Executing Script</h3>
-                  <p className="text-muted-foreground">{executorModal.message}</p>
-                </>
-              )}
-              {executorModal.status === "success" && (
-                <>
-                  <div className="h-16 w-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
-                    <Check className="h-8 w-8 text-green-500" />
-                  </div>
-                  <h3 className="text-xl font-bold text-foreground mb-2">Script Queued!</h3>
-                  <p className="text-muted-foreground">{executorModal.message}</p>
-                  <button
-                    onClick={() => setExecutorModal({ ...executorModal, show: false })}
-                    className="mt-6 px-8 py-3 rounded-lg bg-green-500 text-white font-semibold btn-animated btn-ripple"
-                  >
-                    Done
-                  </button>
-                </>
-              )}
-              {executorModal.status === "error" && (
-                <>
-                  <div className="h-16 w-16 rounded-full bg-destructive/20 flex items-center justify-center mx-auto mb-4">
-                    <X className="h-8 w-8 text-destructive" />
-                  </div>
-                  <h3 className="text-xl font-bold text-foreground mb-2">Error</h3>
-                  <p className="text-muted-foreground">{executorModal.message}</p>
-                  <button
-                    onClick={() => setExecutorModal({ ...executorModal, show: false })}
-                    className="mt-6 px-8 py-3 rounded-lg bg-destructive text-white font-semibold btn-animated btn-ripple"
-                  >
-                    Close
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      </div>
   )
 }

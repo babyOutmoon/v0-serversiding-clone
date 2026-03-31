@@ -35,7 +35,7 @@ export function HeroSection() {
 
           {/* Subheading */}
           <p className="mt-8 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground md:text-lg animate-fade-in-up" style={{ animationDelay: "200ms" }}>
-            We are a professional serversided script execution platform that grants you access to perform a variety of unique features in our games for low prices, zero downloads required.
+            We are a professional serversided script execution platform that grants you access to perform a variety of unique features in our games for low prices, zero downloads required. <span className="text-primary font-semibold">Join any infected game and a GUI will automatically appear!</span>
           </p>
 
           {/* Trust badges */}

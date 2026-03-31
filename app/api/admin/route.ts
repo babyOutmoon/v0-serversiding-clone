@@ -296,11 +296,73 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, message: "Key deleted" })
       }
 
+      case "updateUserRoblox": {
+        if (!ownerOnly) {
+          return NextResponse.json({ error: "Owner only" }, { status: 403 })
+        }
+        const { userId, robloxUsername } = data
+        if (!userId) {
+          return NextResponse.json({ error: "User ID required" }, { status: 400 })
+        }
+        
+        // Find user by ID and update
+        const allUsers = await getAllUsers()
+        const targetUser = allUsers.find(u => u.id === userId)
+        if (!targetUser) {
+          return NextResponse.json({ error: "User not found" }, { status: 404 })
+        }
+        
+        if (targetUser.role === "owner") {
+          return NextResponse.json({ error: "Cannot modify owner" }, { status: 400 })
+        }
+        
+        await updateUser(targetUser.username, { roblox_username: robloxUsername || null })
+        return NextResponse.json({ success: true, message: "Roblox username updated" })
+      }
+
       default:
         return NextResponse.json({ error: "Invalid action" }, { status: 400 })
     }
   } catch (error) {
     console.error("Admin error:", error)
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 })
+  }
+}
+
+// PATCH - Update user data
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json()
+    const { userId, robloxUsername, adminUsername } = body
+
+    // Get admin from header or body
+    const admin = adminUsername || request.headers.get("x-admin-username")
+    
+    if (!admin || !(await isOwner(admin))) {
+      return NextResponse.json({ error: "Owner only" }, { status: 403 })
+    }
+
+    if (!userId) {
+      return NextResponse.json({ error: "User ID required" }, { status: 400 })
+    }
+
+    // Find user by ID
+    const allUsers = await getAllUsers()
+    const targetUser = allUsers.find(u => u.id === userId)
+    
+    if (!targetUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    if (targetUser.role === "owner") {
+      return NextResponse.json({ error: "Cannot modify owner" }, { status: 400 })
+    }
+
+    await updateUser(targetUser.username, { roblox_username: robloxUsername === "" ? null : robloxUsername })
+    
+    return NextResponse.json({ success: true, message: "User updated" })
+  } catch (error) {
+    console.error("Admin PATCH error:", error)
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 })
   }
 }

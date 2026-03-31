@@ -44,7 +44,7 @@ export function FeaturesSection() {
                 Run all of your favourite scripts directly from our dashboard in-game. Experience instant execution speeds in a few seconds, and stop having to worry about problems with scripts!
               </p>
               <ul className="mt-6 flex flex-col gap-3">
-                {["Instant game connection", "Large script hub", "Private scripts", "Auto-run support"].map((item) => (
+                {["Auto GUI on game join", "Instant game connection", "Large script hub", "Private scripts"].map((item) => (
                   <li key={item} className="flex items-center gap-3 text-sm text-muted-foreground">
                     <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10">
                       <Zap className="h-3 w-3 text-primary" />
