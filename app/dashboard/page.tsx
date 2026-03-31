@@ -214,17 +214,17 @@ const fetchAdminData = useCallback(async () => {
     if (!user || !isAdmin) return
     setLoading(true)
     try {
+      // Session is verified via HTTP-only cookie - no need to pass username in URL
       const requests = [
-        fetch(`/api/admin?action=users&admin=${user.username}`),
-        fetch(`/api/admin?action=blacklist&admin=${user.username}`),
-        fetch(`/api/admin?action=games&admin=${user.username}`),
+        fetch(`/api/admin?action=users`),
+        fetch(`/api/admin?action=blacklist`),
+        fetch(`/api/admin?action=games`),
       ]
       
       if (isOwner) {
-        requests.push(fetch(`/api/admin?action=staff&admin=${user.username}`))
-        requests.push(fetch(`/api/admin?action=keys&admin=${user.username}`))
-        requests.push(fetch(`/api/admin?action=webhookInfo&admin=${user.username}`))
-      }
+        requests.push(fetch(`/api/admin?action=staff`))
+        requests.push(fetch(`/api/admin?action=keys`))
+        requests.push(fetch(`/api/admin?action=webhookInfo`))
       
       const responses = await Promise.all(requests)
       const results = await Promise.all(responses.map(r => r.json()))
@@ -281,7 +281,6 @@ const fetchAdminData = useCallback(async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "generateKey",
-          adminUsername: user.username,
           plan,
         }),
       })
@@ -306,7 +305,6 @@ const fetchAdminData = useCallback(async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "deleteKey",
-          adminUsername: user.username,
           keyId,
         }),
       })
@@ -554,6 +552,7 @@ const fetchAdminData = useCallback(async () => {
         if (session.expiresAt && Date.now() > session.expiresAt) {
           localStorage.removeItem("moonss_session")
           document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
+          document.cookie = "moon_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
           router.push("/login")
           return
         }
@@ -573,6 +572,7 @@ const fetchAdminData = useCallback(async () => {
         if (data.blacklisted) {
           localStorage.removeItem("moonss_session")
           document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
+          document.cookie = "moon_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
           router.push("/login")
           return
         }
@@ -604,6 +604,7 @@ const fetchAdminData = useCallback(async () => {
   const handleLogout = () => {
     localStorage.removeItem("moonss_session")
     document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
+    document.cookie = "moon_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
     router.push("/")
   }
 
@@ -710,7 +711,7 @@ const fetchAdminData = useCallback(async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           action: "forceLogout", 
-          adminUsername: user?.username,
+          
           username 
         }),
       })
@@ -737,7 +738,7 @@ const fetchAdminData = useCallback(async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           action: "blacklist", 
-          adminUsername: user?.username,
+          
           username: blacklistModal.username,
           reason: blacklistReason
         }),
@@ -763,7 +764,7 @@ const fetchAdminData = useCallback(async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           action: "unblacklist", 
-          adminUsername: user?.username,
+          
           username
         }),
       })
@@ -821,7 +822,7 @@ const fetchAdminData = useCallback(async () => {
       const body = gameModal.game 
         ? { 
             action, 
-            adminUsername: user?.username,
+            
             gameId: gameModal.game.id,
             updates: { 
               name: fetchedGameData?.name || gameModal.game.name,
@@ -834,7 +835,7 @@ const fetchAdminData = useCallback(async () => {
           }
         : {
             action,
-            adminUsername: user?.username,
+            
             name: fetchedGameData?.name,
             players: fetchedGameData?.players || 0,
             status: newGameStatus,
@@ -868,7 +869,7 @@ const fetchAdminData = useCallback(async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           action: "deleteGame", 
-          adminUsername: user?.username,
+          
           gameId
         }),
       })
@@ -915,7 +916,7 @@ const fetchAdminData = useCallback(async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           action: "createStaff", 
-          adminUsername: user?.username,
+          
           username: newStaffUsername,
           password: newStaffPassword,
           email: newStaffEmail
@@ -944,7 +945,7 @@ const fetchAdminData = useCallback(async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           action: "deleteStaff", 
-          adminUsername: user?.username,
+          
           username
         }),
       })
@@ -2124,7 +2125,7 @@ const sidebarItems = [
                                                 const res = await fetch("/api/admin", {
                                                   method: "PATCH",
                                                   headers: { "Content-Type": "application/json" },
-                                                  body: JSON.stringify({ userId: u.id, robloxUsername: newRoblox || null, adminUsername: user.username }),
+                                                  body: JSON.stringify({ userId: u.id, robloxUsername: newRoblox || null }),
                                                 })
                                                 const data = await res.json()
                                                 if (data.success) {
@@ -2150,7 +2151,7 @@ const sidebarItems = [
                                                 const res = await fetch("/api/admin", {
                                                   method: "PATCH",
                                                   headers: { "Content-Type": "application/json" },
-                                                  body: JSON.stringify({ userId: u.id, robloxUsername: null, adminUsername: user.username }),
+                                                  body: JSON.stringify({ userId: u.id, robloxUsername: null }),
                                                 })
                                                 const data = await res.json()
                                                 if (data.success) {

@@ -87,6 +87,16 @@ export async function POST(request: Request) {
       path: "/",
     })
 
+    // Set secure HTTP-only session cookie for API authentication
+    const secureSession = Buffer.from(`${user.username}:${Date.now()}:${sessionToken}`).toString("base64")
+    response.cookies.set("moon_session", secureSession, {
+      httpOnly: true, // Cannot be accessed by JavaScript
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 30 * 24 * 60 * 60, // 30 days
+      path: "/",
+    })
+
     return response
   } catch (error) {
     console.error("Login error:", error)

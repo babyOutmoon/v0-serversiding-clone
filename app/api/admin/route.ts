@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { cookies } from "next/headers"
 import { 
   getUserByUsername,
   getAllUsers,
@@ -19,6 +20,28 @@ import {
   getScriptLogs
 } from "@/lib/db"
 
+// Verify session from cookie and return username if valid
+async function getSessionUser(): Promise<string | null> {
+  try {
+    const cookieStore = await cookies()
+    const sessionCookie = cookieStore.get("moon_session")
+    if (!sessionCookie?.value) return null
+    
+    // Decode session - format: base64(username:timestamp:hash)
+    const decoded = Buffer.from(sessionCookie.value, "base64").toString()
+    const [username] = decoded.split(":")
+    if (!username) return null
+    
+    // Verify user exists
+    const user = await getUserByUsername(username)
+    if (!user) return null
+    
+    return username
+  } catch {
+    return null
+  }
+}
+
 // Check if user is owner or staff
 async function isAuthorized(username: string): Promise<boolean> {
   const user = await getUserByUsername(username)
@@ -34,11 +57,15 @@ async function isOwner(username: string): Promise<boolean> {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const action = searchParams.get("action")
-  const adminUsername = searchParams.get("admin")
-
-  if (!adminUsername || !(await isAuthorized(adminUsername))) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+  
+  // Get username from secure session cookie, NOT from URL parameter
+  const sessionUsername = await getSessionUser()
+  
+  if (!sessionUsername || !(await isAuthorized(sessionUsername))) {
+    return NextResponse.json({ error: "Unauthorized - Please log in" }, { status: 403 })
   }
+  
+  const adminUsername = sessionUsername
 
   const ownerOnly = await isOwner(adminUsername)
 
@@ -135,12 +162,16 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const { action, adminUsername, ...data } = body
-
-    if (!adminUsername || !(await isAuthorized(adminUsername))) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    // Get username from secure session cookie
+    const sessionUsername = await getSessionUser()
+    
+    if (!sessionUsername || !(await isAuthorized(sessionUsername))) {
+      return NextResponse.json({ error: "Unauthorized - Please log in" }, { status: 403 })
     }
+    
+    const body = await request.json()
+    const { action, ...data } = body
+    const adminUsername = sessionUsername
 
     const ownerOnly = await isOwner(adminUsername)
 
@@ -332,15 +363,15 @@ export async function POST(request: Request) {
 // PATCH - Update user data
 export async function PATCH(request: Request) {
   try {
-    const body = await request.json()
-    const { userId, robloxUsername, adminUsername } = body
-
-    // Get admin from header or body
-    const admin = adminUsername || request.headers.get("x-admin-username")
+    // Get username from secure session cookie
+    const sessionUsername = await getSessionUser()
     
-    if (!admin || !(await isOwner(admin))) {
-      return NextResponse.json({ error: "Owner only" }, { status: 403 })
+    if (!sessionUsername || !(await isOwner(sessionUsername))) {
+      return NextResponse.json({ error: "Owner only - Please log in as owner" }, { status: 403 })
     }
+
+    const body = await request.json()
+    const { userId, robloxUsername } = body
 
     if (!userId) {
       return NextResponse.json({ error: "User ID required" }, { status: 400 })

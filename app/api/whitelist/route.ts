@@ -139,19 +139,34 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const username = searchParams.get("username")
   const webhookKey = searchParams.get("webhookKey")
+  const checkUser = searchParams.get("check") // For Roblox to check single user
 
-  // Webhook endpoint for Roblox to get whitelisted users
+  // Webhook endpoint for Roblox to check if a specific user is whitelisted
   if (webhookKey) {
     const storedKey = await getOrCreateWebhookKey()
     if (webhookKey !== storedKey) {
       return NextResponse.json({ error: "Invalid webhook key" }, { status: 403 })
     }
     
+    // If checking a specific user (more secure - doesn't expose full list)
+    if (checkUser) {
+      const robloxUsers = await getWhitelistedRobloxUsers()
+      const isWhitelisted = robloxUsers.some(
+        u => u.toLowerCase() === checkUser.toLowerCase()
+      )
+      return NextResponse.json({ 
+        whitelisted: isWhitelisted,
+        user: isWhitelisted ? checkUser : null 
+      })
+    }
+    
+    // Return whitelisted usernames (Roblox needs this for the script)
+    // This is protected by the webhook key
     const robloxUsers = await getWhitelistedRobloxUsers()
     return NextResponse.json(robloxUsers)
   }
 
-  // Regular user status check
+  // Regular user status check - requires authentication
   if (!username) {
     return NextResponse.json({ error: "Username required" }, { status: 400 })
   }
