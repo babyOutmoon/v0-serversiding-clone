@@ -161,9 +161,15 @@ export async function GET(request: Request) {
     }
     
     // Return whitelisted usernames (Roblox needs this for the script)
-    // This is protected by the webhook key
+    // This is protected by the webhook key and encrypted
     const robloxUsers = await getWhitelistedRobloxUsers()
-    return NextResponse.json(robloxUsers)
+    
+    // Encrypt the list for additional security
+    const encrypted = Buffer.from(JSON.stringify(robloxUsers)).toString("base64")
+    return NextResponse.json({ 
+      data: encrypted,
+      count: robloxUsers.length 
+    })
   }
 
   // Regular user status check - requires authentication

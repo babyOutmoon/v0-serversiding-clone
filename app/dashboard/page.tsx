@@ -153,6 +153,8 @@ export default function DashboardPage() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
   const [blacklistedUsers, setBlacklistedUsers] = useState<BlacklistedUser[]>([])
   const [games, setGames] = useState<Game[]>([])
+  const [gameStats, setGameStats] = useState<{ totalGames: number; totalPlayers: number }>({ totalGames: 0, totalPlayers: 0 })
+  const [gamesRestricted, setGamesRestricted] = useState(false)
   const [staffAccounts, setStaffAccounts] = useState<StaffAccount[]>([])
   const [adminTab, setAdminTab] = useState<"users" | "blacklist" | "keys" | "logs" | "webhooks" | "staff">("users")
   const [loading, setLoading] = useState(false)
@@ -244,11 +246,25 @@ const fetchAdminData = useCallback(async () => {
     setLoading(false)
   }, [user, isAdmin, isOwner])
 
-  // Fetch games for all users (sorted by players, filtering out games with 0 players on refresh)
-  const fetchGames = useCallback(async (filterEmpty = false) => {
+// Fetch games for all users (sorted by players, filtering out games with 0 players on refresh)
+  const fetchGames = useCallback(async () => {
     try {
       const res = await fetch("/api/games")
       const data = await res.json()
+      
+      // Update stats (always available)
+      if (data.stats) {
+        setGameStats(data.stats)
+      }
+      
+      // Check if restricted (non-whitelisted user)
+      if (data.restricted) {
+        setGamesRestricted(true)
+        setGames([])
+        return
+      }
+      
+      setGamesRestricted(false)
       if (data.games) {
         let gamesList = data.games as Game[]
         // Sort by players (most first)
@@ -962,14 +978,12 @@ const fetchAdminData = useCallback(async () => {
   }
 
 const sidebarItems = [
-    { id: "home" as Tab, label: "Home", icon: Home },
-    { id: "games" as Tab, label: "Games", icon: Gamepad2 },
-    
-    
-    { id: "whitelist" as Tab, label: "Whitelist", icon: Key },
-    { id: "tos" as Tab, label: "ToS", icon: FileText },
-    { id: "settings" as Tab, label: "Settings", icon: Settings },
-    ...(canAccessAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield }] : []),
+    { id: "home" as Tab, label: "Home", icon: Home, restricted: false },
+    { id: "games" as Tab, label: "Games", icon: Gamepad2, restricted: !hasAccess },
+    { id: "whitelist" as Tab, label: "Whitelist", icon: Key, restricted: false },
+    { id: "tos" as Tab, label: "ToS", icon: FileText, restricted: false },
+    { id: "settings" as Tab, label: "Settings", icon: Settings, restricted: false },
+    ...(canAccessAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield, restricted: false }] : []),
   ]
 
   const themes = [
@@ -1255,18 +1269,22 @@ const sidebarItems = [
 {sidebarItems.map((item) => (
                   <button
                     key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${
-                      activeTab === item.id
-                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              }`}
-            >
-              <item.icon className="h-5 w-5" />
-              {item.label}
-              {activeTab === item.id && <ChevronRight className="h-4 w-4 ml-auto" />}
-            </button>
-          ))}
+                    onClick={() => !item.restricted && setActiveTab(item.id)}
+                    disabled={item.restricted}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      item.restricted 
+                        ? "opacity-50 cursor-not-allowed bg-muted/30 text-muted-foreground"
+                        : activeTab === item.id
+                          ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98]"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50 hover:scale-[1.02] active:scale-[0.98]"
+                    }`}
+                  >
+                    <item.icon className={`h-5 w-5 ${item.restricted ? "opacity-50" : ""}`} />
+                    {item.label}
+                    {item.restricted && <Lock className="h-3 w-3 ml-auto text-muted-foreground" />}
+                    {!item.restricted && activeTab === item.id && <ChevronRight className="h-4 w-4 ml-auto" />}
+                  </button>
+                ))}
         </nav>
 
         <div className="p-4 border-t border-border/30">
@@ -1357,10 +1375,10 @@ const sidebarItems = [
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                  { label: "Infected Games", value: `${games.length}`, icon: Gamepad2, color: "text-primary" },
-                  { label: "Total Players", value: formatPlayers(games.reduce((acc, g) => acc + g.players, 0)), icon: Users, color: "text-green-500" },
+                  { label: "Infected Games", value: `${gameStats.totalGames}`, icon: Gamepad2, color: "text-primary" },
+                  { label: "Total Players", value: formatPlayers(gameStats.totalPlayers), icon: Users, color: "text-green-500" },
                   { label: "Active Users", value: `${adminUsers.filter(u => u.isOnline).length}`, icon: Zap, color: "text-yellow-500" },
                   { label: "Uptime", value: "99.9%", icon: Clock, color: "text-accent" },
                 ].map((stat, i) => (
@@ -1401,20 +1419,33 @@ const sidebarItems = [
               <div>
                 <h3 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <button
-                    onClick={() => setActiveTab("games")}
-                    className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] hover:shadow-lg hover:shadow-primary/10"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
-                        <Gamepad2 className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-foreground">Browse Games</p>
-                        <p className="text-sm text-muted-foreground">{games.length}+ supported</p>
-                      </div>
+<button
+                  onClick={() => hasAccess && setActiveTab("games")}
+                  disabled={!hasAccess}
+                  className={`glass rounded-xl p-5 border text-left group transition-all duration-200 ${
+                    hasAccess 
+                      ? "border-border/30 hover:border-primary/50 hover:scale-[1.02] active:scale-[0.98] hover:shadow-lg hover:shadow-primary/10"
+                      : "border-yellow-500/30 opacity-60 cursor-not-allowed"
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`p-3 rounded-lg transition-all ${
+                      hasAccess 
+                        ? "bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground"
+                        : "bg-muted/50 text-muted-foreground"
+                    }`}>
+                      {hasAccess ? <Gamepad2 className="h-6 w-6" /> : <Lock className="h-6 w-6" />}
                     </div>
-                  </button>
+                    <div>
+                      <p className={`font-semibold ${hasAccess ? "text-foreground" : "text-muted-foreground"}`}>
+                        {hasAccess ? "Browse Games" : "Games Locked"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {hasAccess ? `${gameStats.totalGames}+ supported` : "Redeem key to unlock"}
+                      </p>
+                    </div>
+                  </div>
+                </button>
                   <button
                     onClick={() => setActiveTab("whitelist")}
                     className="glass rounded-xl p-5 border border-border/30 text-left group hover:border-primary/50 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] hover:shadow-lg hover:shadow-primary/10"
@@ -1479,12 +1510,36 @@ const sidebarItems = [
                 </div>
               )}
 
-              {games.length === 0 ? (
+{gamesRestricted ? (
+                <div className="glass rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-12 text-center animate-fade-in">
+                  <Lock className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-foreground mb-2">Games Restricted</h3>
+                  <p className="text-muted-foreground max-w-md mx-auto mb-4">
+                    You need to link your Roblox account and redeem a key to view the game list.
+                  </p>
+                  <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground mb-6">
+                    <span className="flex items-center gap-2">
+                      <Gamepad2 className="h-4 w-4 text-primary" />
+                      {gameStats.totalGames} Games Available
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-green-500" />
+                      {formatPlayers(gameStats.totalPlayers)} Players
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab("whitelist")}
+                    className="px-6 py-3 rounded-lg bg-primary text-primary-foreground font-semibold btn-animated btn-ripple"
+                  >
+                    Go to Whitelist
+                  </button>
+                </div>
+              ) : games.length === 0 ? (
                 <div className="glass rounded-xl border border-border/30 p-12 text-center animate-fade-in">
                   <Gamepad2 className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-foreground mb-2">No Games Infected Yet</h3>
                   <p className="text-muted-foreground max-w-md mx-auto">
-                    Games will appear here when they are infected with the Moon Server-Side script. 
+                    Games will appear here when they are infected with the Moon Server-Side script.
                     Check back later or ask an admin to infect a game.
                   </p>
                 </div>

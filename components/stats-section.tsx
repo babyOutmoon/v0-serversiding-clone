@@ -143,15 +143,14 @@ export function StatsSection() {
 
   const fetchLiveStats = useCallback(async () => {
     try {
-      const res = await fetch("/api/games")
+      // Use statsOnly endpoint - doesn't require authentication
+      const res = await fetch("/api/games?statsOnly=true")
       const data = await res.json()
-      if (data.games) {
-        const games = data.games as Game[]
-        const totalPlayers = games.reduce((acc, g) => acc + g.players, 0)
+      if (data.stats) {
         setLiveStats(prev => ({
           ...prev,
-          totalPlayers,
-          totalGames: games.length
+          totalPlayers: data.stats.totalPlayers,
+          totalGames: data.stats.totalGames
         }))
       }
     } catch {
