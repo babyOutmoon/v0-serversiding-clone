@@ -687,3 +687,52 @@
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s ease-in-out infinite;
 }
+
+/* ============ SECURITY STYLES ============ */
+
+/* Disable text selection on protected content */
+[data-no-select],
+.no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Disable image dragging */
+img {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+}
+
+/* Protected content */
+[data-protected] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Disable copy styling */
+[data-no-copy] {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Hide sensitive data in print */
+@media print {
+  [data-no-print],
+  .sensitive-data {
+    display: none !important;
+  }
+  
+  body {
+    display: none !important;
+  }
+}

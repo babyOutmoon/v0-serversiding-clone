@@ -1,14 +1,28 @@
 import { NextResponse } from "next/server"
 import { getUserByUsername, updateUser, isBlacklisted } from "@/lib/db"
+import { rateLimit, getClientIP, RATE_LIMITS } from "@/lib/rate-limit"
 
 export async function POST(request: Request) {
   try {
-    const { username, password } = await request.json()
+    // Get client IP for rate limiting
+    const ip = getClientIP(request)
     
-    // Get client IP
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || 
-               request.headers.get("x-real-ip") || 
-               "Unknown"
+    // Rate limit check - 5 login attempts per minute per IP
+    const rateLimitResult = rateLimit(`login:${ip}`, RATE_LIMITS.login)
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: "Too many login attempts. Please try again later." },
+        { 
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil(rateLimitResult.resetIn / 1000)),
+            "X-RateLimit-Remaining": "0",
+          }
+        }
+      )
+    }
+
+    const { username, password } = await request.json()
 
     if (!username || !password) {
       return NextResponse.json(
