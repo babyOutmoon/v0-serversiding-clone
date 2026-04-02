@@ -107,19 +107,20 @@ export function SecurityShield({ children }: { children: React.ReactNode }) {
       console.clear()
     }, 1000)
 
-    // Anti-debugging: debugger detection
+    // Detect if page is being inspected via timing
     const antiDebugInterval = setInterval(() => {
       const start = performance.now()
-      // This will pause if debugger is attached
-      // eslint-disable-next-line no-debugger
-      debugger
-      const end = performance.now()
-      if (end - start > 100) {
-        // Debugger was detected, redirect or take action
-        document.body.innerHTML = ""
-        router.push("/")
+      // Check console timing - if it takes too long, dev tools might be open
+      for (let i = 0; i < 100; i++) {
+        console.log("")
+        console.clear()
       }
-    }, 5000)
+      const end = performance.now()
+      if (end - start > 200) {
+        // Potential dev tools detected
+        console.clear()
+      }
+    }, 10000)
 
     // Detect dev tools resize
     window.addEventListener("resize", detectDevTools)

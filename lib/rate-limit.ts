@@ -8,15 +8,15 @@ type RateLimitEntry = {
 
 const rateLimitStore = new Map<string, RateLimitEntry>()
 
-// Clean up old entries periodically
-setInterval(() => {
+// Clean up old entries on each request (lazy cleanup)
+function cleanupOldEntries() {
   const now = Date.now()
   for (const [key, entry] of rateLimitStore.entries()) {
     if (now > entry.resetTime) {
       rateLimitStore.delete(key)
     }
   }
-}, 60000) // Clean every minute
+}
 
 export type RateLimitConfig = {
   windowMs: number  // Time window in milliseconds
@@ -27,6 +27,9 @@ export function rateLimit(
   identifier: string,
   config: RateLimitConfig = { windowMs: 60000, maxRequests: 60 }
 ): { success: boolean; remaining: number; resetIn: number } {
+  // Lazy cleanup on each request
+  cleanupOldEntries()
+  
   const now = Date.now()
   const key = identifier
   

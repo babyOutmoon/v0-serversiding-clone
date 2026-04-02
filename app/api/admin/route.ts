@@ -16,8 +16,7 @@ import {
   createWhitelistKey,
   getAllWhitelistKeys,
   deleteWhitelistKey as deleteKeyDb,
-  getOrCreateWebhookKey,
-  getScriptLogs
+  getOrCreateWebhookKey
 } from "@/lib/db"
 
 // Verify session from cookie and return username if valid
@@ -131,18 +130,6 @@ export async function GET(request: Request) {
         used: k.used,
         usedBy: k.used_by,
         createdAt: k.created_at,
-      })) })
-
-    case "logs":
-      const logs = await getScriptLogs()
-      return NextResponse.json({ logs: logs.map(l => ({
-        id: l.id,
-        username: l.username,
-        robloxUsername: l.roblox_username,
-        script: l.script,
-        gameId: l.game_id,
-        gameName: l.game_name,
-        timestamp: l.created_at,
       })) })
 
     case "webhookInfo":

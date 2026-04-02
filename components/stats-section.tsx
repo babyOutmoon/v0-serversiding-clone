@@ -9,12 +9,7 @@ type LiveStats = {
   totalUsers: number
 }
 
-type Game = {
-  id: string
-  name: string
-  players: number
-  status: string
-}
+
 
 function AnimatedCounter({ target, suffix }: { target: number; suffix: string }) {
   const [count, setCount] = useState(0)
