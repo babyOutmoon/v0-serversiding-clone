@@ -694,3 +694,222 @@ export async function getWhitelistedRobloxUsers(): Promise<string[]> {
     return []
   }
 }
+
+// Email verification functions
+export async function setVerificationCode(username: string, code: string): Promise<boolean> {
+  try {
+    const supabase = getAdminClient()
+    const expires = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+    
+    const { error } = await supabase
+      .from("moon_users")
+      .update({ 
+        verification_code: code, 
+        verification_expires: expires.toISOString(),
+        email_verified: false
+      })
+      .eq("username", username)
+    
+    if (error) {
+      console.error("[db] setVerificationCode error:", error.message)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error("[db] setVerificationCode exception:", e)
+    return false
+  }
+}
+
+export async function verifyEmail(username: string, code: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = getAdminClient()
+    
+    const { data: user, error } = await supabase
+      .from("moon_users")
+      .select("verification_code, verification_expires")
+      .eq("username", username)
+      .single()
+    
+    if (error || !user) {
+      return { success: false, error: "User not found" }
+    }
+    
+    if (!user.verification_code) {
+      return { success: false, error: "No verification code found" }
+    }
+    
+    if (new Date() > new Date(user.verification_expires)) {
+      return { success: false, error: "Verification code expired" }
+    }
+    
+    if (user.verification_code !== code) {
+      return { success: false, error: "Invalid verification code" }
+    }
+    
+    // Mark email as verified
+    const { error: updateError } = await supabase
+      .from("moon_users")
+      .update({ 
+        email_verified: true, 
+        verification_code: null,
+        verification_expires: null
+      })
+      .eq("username", username)
+    
+    if (updateError) {
+      return { success: false, error: "Failed to verify email" }
+    }
+    
+    return { success: true }
+  } catch (e) {
+    console.error("[db] verifyEmail exception:", e)
+    return { success: false, error: "Verification failed" }
+  }
+}
+
+export async function isEmailVerified(username: string): Promise<boolean> {
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("moon_users")
+      .select("email_verified")
+      .eq("username", username)
+      .single()
+    
+    if (error || !data) return false
+    return data.email_verified === true
+  } catch {
+    return false
+  }
+}
+
+// Security logging functions
+export async function logSecurityEvent(ip: string, action: string): Promise<{ blocked: boolean; attemptsRemaining: number }> {
+  try {
+    const supabase = getAdminClient()
+    const id = `sec-${ip}-${action}`
+    
+    // Check existing entry
+    const { data: existing } = await supabase
+      .from("security_logs")
+      .select("*")
+      .eq("id", id)
+      .single()
+    
+    const maxAttempts = action === "login" ? 5 : action === "signup" ? 3 : 10
+    const blockDuration = action === "login" ? 15 * 60 * 1000 : 60 * 60 * 1000 // 15 min for login, 1 hour for others
+    
+    if (existing) {
+      // Check if blocked
+      if (existing.blocked_until && new Date() < new Date(existing.blocked_until)) {
+        return { blocked: true, attemptsRemaining: 0 }
+      }
+      
+      // Reset if block expired
+      if (existing.blocked_until && new Date() >= new Date(existing.blocked_until)) {
+        await supabase
+          .from("security_logs")
+          .update({ attempts: 1, blocked_until: null, updated_at: new Date().toISOString() })
+          .eq("id", id)
+        return { blocked: false, attemptsRemaining: maxAttempts - 1 }
+      }
+      
+      // Increment attempts
+      const newAttempts = existing.attempts + 1
+      const shouldBlock = newAttempts >= maxAttempts
+      
+      await supabase
+        .from("security_logs")
+        .update({ 
+          attempts: newAttempts, 
+          blocked_until: shouldBlock ? new Date(Date.now() + blockDuration).toISOString() : null,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", id)
+      
+      return { 
+        blocked: shouldBlock, 
+        attemptsRemaining: Math.max(0, maxAttempts - newAttempts) 
+      }
+    } else {
+      // Create new entry
+      await supabase
+        .from("security_logs")
+        .insert({ 
+          id, 
+          ip_address: ip, 
+          action, 
+          attempts: 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+      return { blocked: false, attemptsRemaining: maxAttempts - 1 }
+    }
+  } catch (e) {
+    console.error("[db] logSecurityEvent exception:", e)
+    return { blocked: false, attemptsRemaining: 10 }
+  }
+}
+
+export async function clearSecurityBlock(ip: string, action: string): Promise<void> {
+  try {
+    const supabase = getAdminClient()
+    const id = `sec-${ip}-${action}`
+    await supabase
+      .from("security_logs")
+      .delete()
+      .eq("id", id)
+  } catch {
+    // Ignore
+  }
+}
+
+// Check for duplicate fingerprint/HWID
+export async function checkDuplicateFingerprint(fingerprint: string, excludeUsername?: string): Promise<boolean> {
+  try {
+    const supabase = getAdminClient()
+    let query = supabase
+      .from("moon_users")
+      .select("username")
+      .eq("fingerprint", fingerprint)
+    
+    if (excludeUsername) {
+      query = query.neq("username", excludeUsername)
+    }
+    
+    const { data } = await query
+    return (data && data.length > 0) || false
+  } catch {
+    return false
+  }
+}
+
+export async function setUserFingerprint(username: string, fingerprint: string): Promise<void> {
+  try {
+    const supabase = getAdminClient()
+    await supabase
+      .from("moon_users")
+      .update({ fingerprint })
+      .eq("username", username)
+  } catch {
+    // Ignore
+  }
+}
+
+// Get user email for verification
+export async function getUserEmail(username: string): Promise<string | null> {
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("moon_users")
+      .select("email")
+      .eq("username", username)
+      .single()
+    
+    if (error || !data) return null
+    return data.email
+  } catch {
+    return null
+  }
+}

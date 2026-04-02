@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { cookies } from "next/headers"
 import { 
   getUserByUsername,
   updateUser,
@@ -6,9 +7,28 @@ import {
   useWhitelistKey,
   getWhitelistedRobloxUsers,
   getOrCreateWebhookKey,
-  createUser,
-  getAllUsers
+  getAllUsers,
+  logSecurityEvent
 } from "@/lib/db"
+import { rateLimit, getClientIP, RATE_LIMITS } from "@/lib/rate-limit"
+
+// Verify session from cookie
+async function getSessionUser(): Promise<string | null> {
+  try {
+    const cookieStore = await cookies()
+    const sessionCookie = cookieStore.get("moon_session")
+    if (!sessionCookie?.value) return null
+    
+    const decoded = Buffer.from(sessionCookie.value, "base64").toString()
+    const [username] = decoded.split(":")
+    if (!username) return null
+    
+    const user = await getUserByUsername(username)
+    return user ? username : null
+  } catch {
+    return null
+  }
+}
 
 // Get Roblox user ID from username (to verify it exists)
 async function verifyRobloxUsername(username: string): Promise<boolean> {
@@ -30,38 +50,60 @@ async function verifyRobloxUsername(username: string): Promise<boolean> {
 
 export async function POST(request: Request) {
   try {
-    const { username, robloxUsername, key } = await request.json()
-
-    if (!username) {
+    const ip = getClientIP(request)
+    
+    // Rate limit key redemption
+    const rateLimitResult = rateLimit(`whitelist:${ip}`, RATE_LIMITS.keyRedeem)
+    if (!rateLimitResult.success) {
       return NextResponse.json(
-        { error: "Username is required" },
-        { status: 400 }
+        { error: "Too many attempts. Please try again later." },
+        { status: 429 }
       )
     }
 
+    // Verify session - must be logged in to redeem keys
+    const sessionUsername = await getSessionUser()
+    if (!sessionUsername) {
+      return NextResponse.json(
+        { error: "You must be logged in to perform this action" },
+        { status: 401 }
+      )
+    }
+
+    const { robloxUsername, key } = await request.json()
+    const username = sessionUsername // Use session username, not from request body
+
     // Find user
-    let user = await getUserByUsername(username)
+    const user = await getUserByUsername(username)
     
-    // If user not found, create a temporary entry (server may have restarted but user has valid session)
     if (!user) {
-      user = await createUser({
-        username,
-        password: "", // They're already logged in via session
-        email: null,
-        role: "user",
-        plan: "none",
-      })
-      
-      if (!user) {
-        return NextResponse.json(
-          { error: "Failed to recover user session" },
-          { status: 500 }
-        )
-      }
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 404 }
+      )
     }
 
     // If key is provided, redeem it first
     if (key) {
+      // Security: Log key redemption attempt
+      const securityCheck = await logSecurityEvent(ip, "key_redeem")
+      if (securityCheck.blocked) {
+        return NextResponse.json(
+          { error: "Too many failed key attempts. Please try again later." },
+          { status: 429 }
+        )
+      }
+
+      // Validate key format
+      if (typeof key !== "string" || key.length < 10 || key.length > 100) {
+        return NextResponse.json({ error: "Invalid key format" }, { status: 400 })
+      }
+
+      // Check if key starts with valid prefix
+      if (!key.startsWith("MOON-STANDARD-") && !key.startsWith("MOON-PREMIUM-")) {
+        return NextResponse.json({ error: "Invalid key format" }, { status: 400 })
+      }
+
       const keyData = await getWhitelistKeyByKey(key)
       
       if (!keyData) {
@@ -70,6 +112,16 @@ export async function POST(request: Request) {
       
       if (keyData.used) {
         return NextResponse.json({ error: "Key already used" }, { status: 400 })
+      }
+
+      // Check key expiration if set
+      if (keyData.expires_at && new Date() > new Date(keyData.expires_at)) {
+        return NextResponse.json({ error: "Key has expired" }, { status: 400 })
+      }
+
+      // Check if user already has a plan (prevent stacking)
+      if (user.plan !== "none") {
+        return NextResponse.json({ error: "You already have an active plan" }, { status: 400 })
       }
       
       // Use the key
