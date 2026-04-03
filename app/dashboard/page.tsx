@@ -186,23 +186,14 @@ export default function DashboardPage() {
   const [robloxWebhookUrl, setRobloxWebhookUrl] = useState("")
   
   
-const [colorTheme, setColorTheme] = useState<string>("blue")
-  
-  // Backend-verified permissions (secure - cannot be manipulated by client)
-  const [verifiedPermissions, setVerifiedPermissions] = useState<{
-    isAdmin: boolean
-    isOwner: boolean
-    hasAccess: boolean
-  }>({ isAdmin: false, isOwner: false, hasAccess: false })
-  const [permissionsLoaded, setPermissionsLoaded] = useState(false)
+  const [colorTheme, setColorTheme] = useState<string>("blue")
 
-  // Use backend-verified permissions instead of client-side
-  const isOwner = verifiedPermissions.isOwner
-  const isStaff = user?.role === "staff" && verifiedPermissions.isAdmin
-  const isAdmin = verifiedPermissions.isAdmin
+  const isOwner = user?.role === "owner"
+  const isStaff = user?.role === "staff"
+  const isAdmin = isOwner || isStaff
   const userPlan = user?.plan || "none"
-  const hasAccess = verifiedPermissions.hasAccess
-  const canAccessAdmin = verifiedPermissions.isAdmin
+  const hasAccess = userPlan !== "none" // Staff/Owner need to redeem key too
+  const canAccessAdmin = isAdmin // But can still access admin panel
 
   const showToast = (message: string, type: "success" | "error") => {
     setToast({ message, type })
@@ -222,8 +213,7 @@ const [colorTheme, setColorTheme] = useState<string>("blue")
   }
 
 const fetchAdminData = useCallback(async () => {
-    // Only fetch if backend-verified as admin
-    if (!user || !verifiedPermissions.isAdmin) return
+    if (!user || !isAdmin) return
     setLoading(true)
     try {
       // Session is verified via HTTP-only cookie - no need to pass username in URL
@@ -233,13 +223,10 @@ const fetchAdminData = useCallback(async () => {
         fetch(`/api/admin?action=games`),
       ]
       
-      // Use backend-verified owner status
-      const isVerifiedOwner = verifiedPermissions.isOwner
-      if (isVerifiedOwner) {
+      if (isOwner) {
         requests.push(fetch(`/api/admin?action=staff`))
         requests.push(fetch(`/api/admin?action=keys`))
         requests.push(fetch(`/api/admin?action=webhookInfo`))
-      }
       
       const responses = await Promise.all(requests)
       const results = await Promise.all(responses.map(r => r.json()))
@@ -247,9 +234,9 @@ const fetchAdminData = useCallback(async () => {
       if (results[0]?.users) setAdminUsers(results[0].users)
       if (results[1]?.blacklist) setBlacklistedUsers(results[1].blacklist)
       if (results[2]?.games) setGames(results[2].games)
-      if (isVerifiedOwner && results[3]?.staff) setStaffAccounts(results[3].staff)
-      if (isVerifiedOwner && results[4]?.keys) setWhitelistKeys(results[4].keys)
-      if (isVerifiedOwner && results[5]?.webhookKey) {
+      if (isOwner && results[3]?.staff) setStaffAccounts(results[3].staff)
+      if (isOwner && results[4]?.keys) setWhitelistKeys(results[4].keys)
+      if (isOwner && results[5]?.webhookKey) {
         setWebhookKey(results[5].webhookKey)
         setRobloxWebhookUrl(results[5].webhookUrl)
       }
@@ -257,7 +244,7 @@ const fetchAdminData = useCallback(async () => {
       console.error("Failed to fetch admin data", err)
     }
     setLoading(false)
-  }, [user, verifiedPermissions.isAdmin, verifiedPermissions.isOwner])
+  }, [user, isAdmin, isOwner])
 
 // Fetch games for all users (sorted by players, filtering out games with 0 players on refresh)
   const fetchGames = useCallback(async () => {
@@ -431,49 +418,6 @@ const fetchAdminData = useCallback(async () => {
     setGames(updatedGames)
   }, [games])
 
-  // Fetch and verify permissions from backend (secure)
-  useEffect(() => {
-    const verifyPermissions = async () => {
-      try {
-        const res = await fetch("/api/auth/status")
-        const data = await res.json()
-        
-        if (data.authenticated && data.permissions) {
-          setVerifiedPermissions({
-            isAdmin: data.permissions.isAdmin || false,
-            isOwner: data.permissions.isOwner || false,
-            hasAccess: data.permissions.hasAccess || false,
-          })
-          
-          // Also update user data from backend (more secure)
-          if (data.user) {
-            setUser(prev => prev ? {
-              ...prev,
-              role: data.user.role,
-              plan: data.user.plan,
-              robloxUsername: data.user.robloxUsername,
-            } : prev)
-          }
-        } else if (data.blacklisted) {
-          // User is blacklisted
-          localStorage.removeItem("moonss_session")
-          document.cookie = "moonss_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
-          document.cookie = "moon_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
-          router.push("/login")
-          return
-        }
-      } catch {
-        // Network error - keep existing permissions
-      }
-      setPermissionsLoaded(true)
-    }
-    
-    verifyPermissions()
-    // Re-verify permissions every 60 seconds
-    const interval = setInterval(verifyPermissions, 60000)
-    return () => clearInterval(interval)
-  }, [router])
-  
   useEffect(() => {
     // Check localStorage first
     const session = localStorage.getItem("moonss_session")
@@ -562,12 +506,12 @@ const fetchAdminData = useCallback(async () => {
     }
   }, [user, isAdmin, isOwner, fetchAdminData, fetchWebhookKey])
 
-// Also refresh when switching to admin tab - only if backend verified as admin
+  // Also refresh when switching to admin tab
   useEffect(() => {
-    if (user && permissionsLoaded && verifiedPermissions.isAdmin && activeTab === "admin") {
+    if (user && isAdmin && activeTab === "admin") {
       fetchAdminData()
     }
-  }, [activeTab, user, permissionsLoaded, verifiedPermissions.isAdmin, fetchAdminData])
+  }, [activeTab, user, isAdmin, fetchAdminData])
 
   useEffect(() => {
     if (user && (activeTab === "games" || activeTab === "home")) {
@@ -1034,13 +978,12 @@ const fetchAdminData = useCallback(async () => {
   }
 
 const sidebarItems = [
-{ id: "home" as Tab, label: "Home", icon: Home, restricted: false },
+    { id: "home" as Tab, label: "Home", icon: Home, restricted: false },
     { id: "games" as Tab, label: "Games", icon: Gamepad2, restricted: !hasAccess },
     { id: "whitelist" as Tab, label: "Whitelist", icon: Key, restricted: false },
     { id: "tos" as Tab, label: "ToS", icon: FileText, restricted: false },
     { id: "settings" as Tab, label: "Settings", icon: Settings, restricted: false },
-    // Only show Admin Panel if backend-verified as admin
-    ...(permissionsLoaded && verifiedPermissions.isAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield, restricted: false }] : []),
+    ...(canAccessAdmin ? [{ id: "admin" as Tab, label: "Admin Panel", icon: Shield, restricted: false }] : []),
   ]
 
   const themes = [
@@ -1992,9 +1935,9 @@ const sidebarItems = [
             </div>
           )}
 
-{/* Admin Tab - Only render if permissions verified from backend */}
-              {activeTab === "admin" && permissionsLoaded && verifiedPermissions.isAdmin && (
-                <div className="space-y-6">
+          {/* Admin Tab */}
+          {activeTab === "admin" && isAdmin && (
+            <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">Admin Panel</h2>

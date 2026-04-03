@@ -98,6 +98,4 @@ export const RATE_LIMITS = {
   whitelist: { windowMs: 60000, maxRequests: 100 },
   // Key redemption: 5 per minute
   redeem: { windowMs: 60000, maxRequests: 5 },
-  // Key redemption (alias)
-  keyRedeem: { windowMs: 60000, maxRequests: 5 },
 }
