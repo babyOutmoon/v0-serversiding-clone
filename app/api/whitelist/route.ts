@@ -7,15 +7,12 @@ import {
   useWhitelistKey,
   getWhitelistedRobloxUsers,
   getOrCreateWebhookKey,
-  createUser,
   getAllUsers,
-  logKeyAttempt,
-  hasExcessiveKeyAttempts,
   logSecurityEvent
 } from "@/lib/db"
 import { rateLimit, getClientIP, RATE_LIMITS } from "@/lib/rate-limit"
 
-// Get session user from cookie
+// Verify session from cookie
 async function getSessionUser(): Promise<string | null> {
   try {
     const cookieStore = await cookies()
@@ -24,7 +21,10 @@ async function getSessionUser(): Promise<string | null> {
     
     const decoded = Buffer.from(sessionCookie.value, "base64").toString()
     const [username] = decoded.split(":")
-    return username || null
+    if (!username) return null
+    
+    const user = await getUserByUsername(username)
+    return user ? username : null
   } catch {
     return null
   }
@@ -52,100 +52,83 @@ export async function POST(request: Request) {
   try {
     const ip = getClientIP(request)
     
-    // Rate limit key redemptions - 10 attempts per hour
-    const rateLimitResult = rateLimit(`whitelist:${ip}`, RATE_LIMITS.keyRedemption)
+    // Rate limit key redemption
+    const rateLimitResult = rateLimit(`whitelist:${ip}`, RATE_LIMITS.keyRedeem)
     if (!rateLimitResult.success) {
-      await logSecurityEvent("key_rate_limit", ip, null, "Key redemption rate limit exceeded")
       return NextResponse.json(
         { error: "Too many attempts. Please try again later." },
         { status: 429 }
       )
     }
 
-    // Verify session - user must be logged in
+    // Verify session - must be logged in to redeem keys
     const sessionUsername = await getSessionUser()
-    
-    const { username, robloxUsername, key } = await request.json()
-
-    // Session username must match request username
-    if (sessionUsername && sessionUsername.toLowerCase() !== username?.toLowerCase()) {
-      await logSecurityEvent("session_mismatch", ip, username, `Session: ${sessionUsername}, Request: ${username}`)
+    if (!sessionUsername) {
       return NextResponse.json(
-        { error: "Session mismatch. Please log in again." },
-        { status: 403 }
+        { error: "You must be logged in to perform this action" },
+        { status: 401 }
       )
     }
 
-    if (!username) {
-      return NextResponse.json(
-        { error: "Username is required" },
-        { status: 400 }
-      )
-    }
+    const { robloxUsername, key } = await request.json()
+    const username = sessionUsername // Use session username, not from request body
 
     // Find user
-    let user = await getUserByUsername(username)
+    const user = await getUserByUsername(username)
     
-    // If user not found, create a temporary entry (server may have restarted but user has valid session)
     if (!user) {
-      user = await createUser({
-        username,
-        password: "", // They're already logged in via session
-        email: null,
-        role: "user",
-        plan: "none",
-      })
-      
-      if (!user) {
-        return NextResponse.json(
-          { error: "Failed to recover user session" },
-          { status: 500 }
-        )
-      }
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 404 }
+      )
     }
 
     // If key is provided, redeem it first
     if (key) {
-      // Check for brute force attempts
-      const hasExcessive = await hasExcessiveKeyAttempts(ip)
-      if (hasExcessive) {
-        await logSecurityEvent("key_brute_force", ip, username, "Blocked due to excessive failed key attempts")
+      // Security: Log key redemption attempt
+      const securityCheck = await logSecurityEvent(ip, "key_redeem")
+      if (securityCheck.blocked) {
         return NextResponse.json(
-          { error: "Too many failed attempts. Please try again in 15 minutes." },
+          { error: "Too many failed key attempts. Please try again later." },
           { status: 429 }
         )
       }
 
-      // Validate key format before database lookup
-      if (!/^MOON-(STANDARD|PREMIUM)-[A-Z0-9]+-[A-Z0-9]+$/i.test(key)) {
-        await logKeyAttempt(ip, username, key, false)
-        await logSecurityEvent("invalid_key_format", ip, username, "Invalid key format attempted")
+      // Validate key format
+      if (typeof key !== "string" || key.length < 10 || key.length > 100) {
+        return NextResponse.json({ error: "Invalid key format" }, { status: 400 })
+      }
+
+      // Check if key starts with valid prefix
+      if (!key.startsWith("MOON-STANDARD-") && !key.startsWith("MOON-PREMIUM-")) {
         return NextResponse.json({ error: "Invalid key format" }, { status: 400 })
       }
 
       const keyData = await getWhitelistKeyByKey(key)
       
       if (!keyData) {
-        await logKeyAttempt(ip, username, key, false)
-        await logSecurityEvent("invalid_key", ip, username, "Invalid key attempted")
         return NextResponse.json({ error: "Invalid key" }, { status: 400 })
       }
       
       if (keyData.used) {
-        await logKeyAttempt(ip, username, key, false)
         return NextResponse.json({ error: "Key already used" }, { status: 400 })
+      }
+
+      // Check key expiration if set
+      if (keyData.expires_at && new Date() > new Date(keyData.expires_at)) {
+        return NextResponse.json({ error: "Key has expired" }, { status: 400 })
+      }
+
+      // Check if user already has a plan (prevent stacking)
+      if (user.plan !== "none") {
+        return NextResponse.json({ error: "You already have an active plan" }, { status: 400 })
       }
       
       // Use the key
       const usedKey = await useWhitelistKey(key, username)
       if (!usedKey) {
-        await logKeyAttempt(ip, username, key, false)
         return NextResponse.json({ error: "Failed to redeem key" }, { status: 400 })
       }
-      
-      // Log successful redemption
-      await logKeyAttempt(ip, username, key, true)
-      await logSecurityEvent("key_redeemed", ip, username, `Plan: ${keyData.plan}`)
       
       // Update user plan
       await updateUser(username, { plan: keyData.plan })

@@ -14,11 +14,6 @@ export type User = {
   roblox_username: string | null
   plan: "none" | "standard" | "premium"
   avatar: string | null
-  email_verified: boolean
-  verification_token: string | null
-  verification_token_expires: string | null
-  failed_login_attempts: number
-  locked_until: string | null
 }
 
 export type WhitelistKey = {
@@ -700,133 +695,56 @@ export async function getWhitelistedRobloxUsers(): Promise<string[]> {
   }
 }
 
-// Security functions
-
-// Log key redemption attempt
-export async function logKeyAttempt(
-  ipAddress: string, 
-  username: string | null, 
-  attemptedKey: string, 
-  success: boolean
-): Promise<void> {
+// Email verification functions
+export async function setVerificationCode(username: string, code: string): Promise<boolean> {
   try {
     const supabase = getAdminClient()
-    const id = `attempt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-    await supabase.from("key_redemption_attempts").insert({
-      id,
-      ip_address: ipAddress,
-      username,
-      attempted_key: attemptedKey.substring(0, 20) + "...", // Don't store full key
-      success,
-      created_at: new Date().toISOString(),
-    })
-  } catch (e) {
-    console.error("[db] logKeyAttempt exception:", e)
-  }
-}
-
-// Check if IP has too many failed key attempts
-export async function hasExcessiveKeyAttempts(ipAddress: string, maxAttempts = 5, windowMinutes = 15): Promise<boolean> {
-  try {
-    const supabase = getAdminClient()
-    const windowStart = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString()
-    
-    const { count, error } = await supabase
-      .from("key_redemption_attempts")
-      .select("*", { count: "exact", head: true })
-      .eq("ip_address", ipAddress)
-      .eq("success", false)
-      .gte("created_at", windowStart)
-    
-    if (error) {
-      console.error("[db] hasExcessiveKeyAttempts error:", error.message)
-      return false
-    }
-    return (count || 0) >= maxAttempts
-  } catch (e) {
-    console.error("[db] hasExcessiveKeyAttempts exception:", e)
-    return false
-  }
-}
-
-// Log security event
-export async function logSecurityEvent(
-  eventType: string,
-  ipAddress: string | null,
-  username: string | null,
-  details: string | null
-): Promise<void> {
-  try {
-    const supabase = getAdminClient()
-    const id = `sec-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-    await supabase.from("security_logs").insert({
-      id,
-      event_type: eventType,
-      ip_address: ipAddress,
-      username,
-      details,
-      created_at: new Date().toISOString(),
-    })
-  } catch (e) {
-    console.error("[db] logSecurityEvent exception:", e)
-  }
-}
-
-// Generate email verification token
-export function generateVerificationToken(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-  let token = ""
-  for (let i = 0; i < 64; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return token
-}
-
-// Set email verification token for user
-export async function setVerificationToken(username: string): Promise<string | null> {
-  try {
-    const supabase = getAdminClient()
-    const token = generateVerificationToken()
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
+    const expires = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
     
     const { error } = await supabase
       .from("moon_users")
       .update({ 
-        verification_token: token, 
-        verification_token_expires: expires 
+        verification_code: code, 
+        verification_expires: expires.toISOString(),
+        email_verified: false
       })
-      .ilike("username", username)
+      .eq("username", username)
     
     if (error) {
-      console.error("[db] setVerificationToken error:", error.message)
-      return null
+      console.error("[db] setVerificationCode error:", error.message)
+      return false
     }
-    return token
+    return true
   } catch (e) {
-    console.error("[db] setVerificationToken exception:", e)
-    return null
+    console.error("[db] setVerificationCode exception:", e)
+    return false
   }
 }
 
-// Verify email with token
-export async function verifyEmail(token: string): Promise<{ success: boolean; username?: string; error?: string }> {
+export async function verifyEmail(username: string, code: string): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = getAdminClient()
     
-    // Find user with this token
-    const { data: user, error: findError } = await supabase
+    const { data: user, error } = await supabase
       .from("moon_users")
-      .select("*")
-      .eq("verification_token", token)
+      .select("verification_code, verification_expires")
+      .eq("username", username)
       .single()
     
-    if (findError || !user) {
-      return { success: false, error: "Invalid verification token" }
+    if (error || !user) {
+      return { success: false, error: "User not found" }
     }
     
-    // Check if token is expired
-    if (user.verification_token_expires && new Date(user.verification_token_expires) < new Date()) {
-      return { success: false, error: "Verification token has expired" }
+    if (!user.verification_code) {
+      return { success: false, error: "No verification code found" }
+    }
+    
+    if (new Date() > new Date(user.verification_expires)) {
+      return { success: false, error: "Verification code expired" }
+    }
+    
+    if (user.verification_code !== code) {
+      return { success: false, error: "Invalid verification code" }
     }
     
     // Mark email as verified
@@ -834,95 +752,164 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; us
       .from("moon_users")
       .update({ 
         email_verified: true, 
-        verification_token: null, 
-        verification_token_expires: null 
+        verification_code: null,
+        verification_expires: null
       })
-      .eq("id", user.id)
+      .eq("username", username)
     
     if (updateError) {
       return { success: false, error: "Failed to verify email" }
     }
     
-    return { success: true, username: user.username }
+    return { success: true }
   } catch (e) {
     console.error("[db] verifyEmail exception:", e)
-    return { success: false, error: "Something went wrong" }
+    return { success: false, error: "Verification failed" }
   }
 }
 
-// Increment failed login attempts
-export async function incrementFailedLogins(username: string): Promise<number> {
-  try {
-    const supabase = getAdminClient()
-    const user = await getUserByUsername(username)
-    if (!user) return 0
-    
-    const newCount = (user.failed_login_attempts || 0) + 1
-    let lockedUntil = null
-    
-    // Lock account after 5 failed attempts for 15 minutes
-    if (newCount >= 5) {
-      lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString()
-    }
-    
-    await supabase
-      .from("moon_users")
-      .update({ 
-        failed_login_attempts: newCount,
-        locked_until: lockedUntil
-      })
-      .ilike("username", username)
-    
-    return newCount
-  } catch (e) {
-    console.error("[db] incrementFailedLogins exception:", e)
-    return 0
-  }
-}
-
-// Reset failed login attempts
-export async function resetFailedLogins(username: string): Promise<void> {
-  try {
-    const supabase = getAdminClient()
-    await supabase
-      .from("moon_users")
-      .update({ 
-        failed_login_attempts: 0,
-        locked_until: null
-      })
-      .ilike("username", username)
-  } catch (e) {
-    console.error("[db] resetFailedLogins exception:", e)
-  }
-}
-
-// Check if account is locked
-export async function isAccountLocked(username: string): Promise<boolean> {
-  try {
-    const user = await getUserByUsername(username)
-    if (!user || !user.locked_until) return false
-    return new Date(user.locked_until) > new Date()
-  } catch (e) {
-    console.error("[db] isAccountLocked exception:", e)
-    return false
-  }
-}
-
-// Get user by email
-export async function getUserByEmail(email: string): Promise<User | null> {
+export async function isEmailVerified(username: string): Promise<boolean> {
   try {
     const supabase = getAdminClient()
     const { data, error } = await supabase
       .from("moon_users")
-      .select("*")
-      .ilike("email", email)
+      .select("email_verified")
+      .eq("username", username)
       .single()
-    if (error && error.code !== "PGRST116") {
-      console.error("[db] getUserByEmail error:", error.message)
+    
+    if (error || !data) return false
+    return data.email_verified === true
+  } catch {
+    return false
+  }
+}
+
+// Security logging functions
+export async function logSecurityEvent(ip: string, action: string): Promise<{ blocked: boolean; attemptsRemaining: number }> {
+  try {
+    const supabase = getAdminClient()
+    const id = `sec-${ip}-${action}`
+    
+    // Check existing entry
+    const { data: existing } = await supabase
+      .from("security_logs")
+      .select("*")
+      .eq("id", id)
+      .single()
+    
+    const maxAttempts = action === "login" ? 5 : action === "signup" ? 3 : 10
+    const blockDuration = action === "login" ? 15 * 60 * 1000 : 60 * 60 * 1000 // 15 min for login, 1 hour for others
+    
+    if (existing) {
+      // Check if blocked
+      if (existing.blocked_until && new Date() < new Date(existing.blocked_until)) {
+        return { blocked: true, attemptsRemaining: 0 }
+      }
+      
+      // Reset if block expired
+      if (existing.blocked_until && new Date() >= new Date(existing.blocked_until)) {
+        await supabase
+          .from("security_logs")
+          .update({ attempts: 1, blocked_until: null, updated_at: new Date().toISOString() })
+          .eq("id", id)
+        return { blocked: false, attemptsRemaining: maxAttempts - 1 }
+      }
+      
+      // Increment attempts
+      const newAttempts = existing.attempts + 1
+      const shouldBlock = newAttempts >= maxAttempts
+      
+      await supabase
+        .from("security_logs")
+        .update({ 
+          attempts: newAttempts, 
+          blocked_until: shouldBlock ? new Date(Date.now() + blockDuration).toISOString() : null,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", id)
+      
+      return { 
+        blocked: shouldBlock, 
+        attemptsRemaining: Math.max(0, maxAttempts - newAttempts) 
+      }
+    } else {
+      // Create new entry
+      await supabase
+        .from("security_logs")
+        .insert({ 
+          id, 
+          ip_address: ip, 
+          action, 
+          attempts: 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+      return { blocked: false, attemptsRemaining: maxAttempts - 1 }
     }
-    return data
   } catch (e) {
-    console.error("[db] getUserByEmail exception:", e)
+    console.error("[db] logSecurityEvent exception:", e)
+    return { blocked: false, attemptsRemaining: 10 }
+  }
+}
+
+export async function clearSecurityBlock(ip: string, action: string): Promise<void> {
+  try {
+    const supabase = getAdminClient()
+    const id = `sec-${ip}-${action}`
+    await supabase
+      .from("security_logs")
+      .delete()
+      .eq("id", id)
+  } catch {
+    // Ignore
+  }
+}
+
+// Check for duplicate fingerprint/HWID
+export async function checkDuplicateFingerprint(fingerprint: string, excludeUsername?: string): Promise<boolean> {
+  try {
+    const supabase = getAdminClient()
+    let query = supabase
+      .from("moon_users")
+      .select("username")
+      .eq("fingerprint", fingerprint)
+    
+    if (excludeUsername) {
+      query = query.neq("username", excludeUsername)
+    }
+    
+    const { data } = await query
+    return (data && data.length > 0) || false
+  } catch {
+    return false
+  }
+}
+
+export async function setUserFingerprint(username: string, fingerprint: string): Promise<void> {
+  try {
+    const supabase = getAdminClient()
+    await supabase
+      .from("moon_users")
+      .update({ fingerprint })
+      .eq("username", username)
+  } catch {
+    // Ignore
+  }
+}
+
+// Get user email for verification
+export async function getUserEmail(username: string): Promise<string | null> {
+  try {
+    const supabase = getAdminClient()
+    const { data, error } = await supabase
+      .from("moon_users")
+      .select("email")
+      .eq("username", username)
+      .single()
+    
+    if (error || !data) return null
+    return data.email
+  } catch {
     return null
   }
 }
