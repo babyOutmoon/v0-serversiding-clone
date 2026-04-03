@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { cookies } from "next/headers"
 import { 
   getUserByUsername,
   updateUser,
@@ -7,8 +8,27 @@ import {
   getWhitelistedRobloxUsers,
   getOrCreateWebhookKey,
   createUser,
-  getAllUsers
+  getAllUsers,
+  logKeyAttempt,
+  hasExcessiveKeyAttempts,
+  logSecurityEvent
 } from "@/lib/db"
+import { rateLimit, getClientIP, RATE_LIMITS } from "@/lib/rate-limit"
+
+// Get session user from cookie
+async function getSessionUser(): Promise<string | null> {
+  try {
+    const cookieStore = await cookies()
+    const sessionCookie = cookieStore.get("moon_session")
+    if (!sessionCookie?.value) return null
+    
+    const decoded = Buffer.from(sessionCookie.value, "base64").toString()
+    const [username] = decoded.split(":")
+    return username || null
+  } catch {
+    return null
+  }
+}
 
 // Get Roblox user ID from username (to verify it exists)
 async function verifyRobloxUsername(username: string): Promise<boolean> {
@@ -30,7 +50,31 @@ async function verifyRobloxUsername(username: string): Promise<boolean> {
 
 export async function POST(request: Request) {
   try {
+    const ip = getClientIP(request)
+    
+    // Rate limit key redemptions - 10 attempts per hour
+    const rateLimitResult = rateLimit(`whitelist:${ip}`, RATE_LIMITS.keyRedemption)
+    if (!rateLimitResult.success) {
+      await logSecurityEvent("key_rate_limit", ip, null, "Key redemption rate limit exceeded")
+      return NextResponse.json(
+        { error: "Too many attempts. Please try again later." },
+        { status: 429 }
+      )
+    }
+
+    // Verify session - user must be logged in
+    const sessionUsername = await getSessionUser()
+    
     const { username, robloxUsername, key } = await request.json()
+
+    // Session username must match request username
+    if (sessionUsername && sessionUsername.toLowerCase() !== username?.toLowerCase()) {
+      await logSecurityEvent("session_mismatch", ip, username, `Session: ${sessionUsername}, Request: ${username}`)
+      return NextResponse.json(
+        { error: "Session mismatch. Please log in again." },
+        { status: 403 }
+      )
+    }
 
     if (!username) {
       return NextResponse.json(
@@ -62,21 +106,46 @@ export async function POST(request: Request) {
 
     // If key is provided, redeem it first
     if (key) {
+      // Check for brute force attempts
+      const hasExcessive = await hasExcessiveKeyAttempts(ip)
+      if (hasExcessive) {
+        await logSecurityEvent("key_brute_force", ip, username, "Blocked due to excessive failed key attempts")
+        return NextResponse.json(
+          { error: "Too many failed attempts. Please try again in 15 minutes." },
+          { status: 429 }
+        )
+      }
+
+      // Validate key format before database lookup
+      if (!/^MOON-(STANDARD|PREMIUM)-[A-Z0-9]+-[A-Z0-9]+$/i.test(key)) {
+        await logKeyAttempt(ip, username, key, false)
+        await logSecurityEvent("invalid_key_format", ip, username, "Invalid key format attempted")
+        return NextResponse.json({ error: "Invalid key format" }, { status: 400 })
+      }
+
       const keyData = await getWhitelistKeyByKey(key)
       
       if (!keyData) {
+        await logKeyAttempt(ip, username, key, false)
+        await logSecurityEvent("invalid_key", ip, username, "Invalid key attempted")
         return NextResponse.json({ error: "Invalid key" }, { status: 400 })
       }
       
       if (keyData.used) {
+        await logKeyAttempt(ip, username, key, false)
         return NextResponse.json({ error: "Key already used" }, { status: 400 })
       }
       
       // Use the key
       const usedKey = await useWhitelistKey(key, username)
       if (!usedKey) {
+        await logKeyAttempt(ip, username, key, false)
         return NextResponse.json({ error: "Failed to redeem key" }, { status: 400 })
       }
+      
+      // Log successful redemption
+      await logKeyAttempt(ip, username, key, true)
+      await logSecurityEvent("key_redeemed", ip, username, `Plan: ${keyData.plan}`)
       
       // Update user plan
       await updateUser(username, { plan: keyData.plan })

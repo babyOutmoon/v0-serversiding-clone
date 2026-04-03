@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server"
-import { getUserByUsername, updateUser, isBlacklisted } from "@/lib/db"
+import { 
+  getUserByUsername, 
+  updateUser, 
+  isBlacklisted,
+  isAccountLocked,
+  incrementFailedLogins,
+  resetFailedLogins,
+  logSecurityEvent
+} from "@/lib/db"
 import { rateLimit, getClientIP, RATE_LIMITS } from "@/lib/rate-limit"
 
 export async function POST(request: Request) {
@@ -10,6 +18,7 @@ export async function POST(request: Request) {
     // Rate limit check - 5 login attempts per minute per IP
     const rateLimitResult = rateLimit(`login:${ip}`, RATE_LIMITS.login)
     if (!rateLimitResult.success) {
+      await logSecurityEvent("login_rate_limit", ip, null, "Login rate limit exceeded")
       return NextResponse.json(
         { error: "Too many login attempts. Please try again later." },
         { 
@@ -34,6 +43,7 @@ export async function POST(request: Request) {
     // Check if user is blacklisted
     const blacklisted = await isBlacklisted(username)
     if (blacklisted) {
+      await logSecurityEvent("login_blacklisted", ip, username, "Blacklisted user attempted login")
       return NextResponse.json(
         { 
           error: "blacklisted",
@@ -45,15 +55,52 @@ export async function POST(request: Request) {
       )
     }
 
+    // Check if account is locked
+    const locked = await isAccountLocked(username)
+    if (locked) {
+      await logSecurityEvent("login_locked", ip, username, "Locked account login attempt")
+      return NextResponse.json(
+        { error: "Account is temporarily locked due to too many failed attempts. Please try again in 15 minutes." },
+        { status: 423 }
+      )
+    }
+
     // Find user
     const user = await getUserByUsername(username)
     
     if (!user || user.password !== password) {
+      // Log failed attempt and increment counter
+      if (user) {
+        const failCount = await incrementFailedLogins(username)
+        await logSecurityEvent("login_failed", ip, username, `Failed login attempt ${failCount}`)
+        
+        if (failCount >= 5) {
+          return NextResponse.json(
+            { error: "Account locked due to too many failed attempts. Please try again in 15 minutes." },
+            { status: 423 }
+          )
+        }
+      }
       return NextResponse.json(
         { error: "Invalid username or password" },
         { status: 401 }
       )
     }
+
+    // Check email verification (but allow existing users who haven't verified yet)
+    if (user.email_verified === false && user.verification_token) {
+      return NextResponse.json(
+        { 
+          error: "Please verify your email address before logging in. Check your inbox for the verification link.",
+          requiresVerification: true,
+          email: user.email,
+        },
+        { status: 403 }
+      )
+    }
+
+    // Reset failed login attempts on successful login
+    await resetFailedLogins(username)
 
     // Update user info
     await updateUser(username, {
