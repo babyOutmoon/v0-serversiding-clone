@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getUserByUsername, createUser, setVerificationCode, logSecurityEvent, checkDuplicateFingerprint, setUserFingerprint } from "@/lib/db"
-import { generateVerificationCode, sendVerificationEmail } from "@/lib/email"
+import { getUserByUsername, createUser } from "@/lib/db"
 import { rateLimit, getClientIP, RATE_LIMITS } from "@/lib/rate-limit"
 
 export async function POST(request: Request) {
@@ -17,16 +16,7 @@ export async function POST(request: Request) {
       )
     }
     
-    // Check security block
-    const securityCheck = await logSecurityEvent(ip, "signup")
-    if (securityCheck.blocked) {
-      return NextResponse.json(
-        { error: "Too many failed attempts. Please try again in 1 hour." },
-        { status: 429 }
-      )
-    }
-
-    const { username, email, password, fingerprint } = await request.json()
+    const { username, email, password } = await request.json()
 
     if (!username || !email || !password) {
       return NextResponse.json(
@@ -68,17 +58,6 @@ export async function POST(request: Request) {
       )
     }
 
-    // Check for duplicate fingerprint (same device trying to create multiple accounts)
-    if (fingerprint) {
-      const isDuplicate = await checkDuplicateFingerprint(fingerprint)
-      if (isDuplicate) {
-        return NextResponse.json(
-          { error: "An account already exists on this device" },
-          { status: 400 }
-        )
-      }
-    }
-
     // Check if username already exists
     const existingUser = await getUserByUsername(username)
     if (existingUser) {
@@ -105,25 +84,9 @@ export async function POST(request: Request) {
       )
     }
 
-    // Set fingerprint if provided
-    if (fingerprint) {
-      await setUserFingerprint(username, fingerprint)
-    }
-
-    // Generate and send verification code
-    const verificationCode = generateVerificationCode()
-    await setVerificationCode(username, verificationCode)
-    
-    const emailSent = await sendVerificationEmail(email, verificationCode, username)
-    
-    if (!emailSent) {
-      console.error("[signup] Failed to send verification email to:", email)
-    }
-
     return NextResponse.json({
       success: true,
-      message: "Account created! Please check your email for verification code.",
-      requiresVerification: true,
+      message: "Account created successfully!",
       username: newUser.username,
     })
   } catch (error) {

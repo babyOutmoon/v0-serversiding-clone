@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getUserByUsername, updateUser, isBlacklisted, isEmailVerified, logSecurityEvent, clearSecurityBlock } from "@/lib/db"
+import { getUserByUsername, updateUser, isBlacklisted } from "@/lib/db"
 import { rateLimit, getClientIP, RATE_LIMITS } from "@/lib/rate-limit"
 
 export async function POST(request: Request) {
@@ -19,15 +19,6 @@ export async function POST(request: Request) {
             "X-RateLimit-Remaining": "0",
           }
         }
-      )
-    }
-
-    // Check security block (bruteforce protection)
-    const securityCheck = await logSecurityEvent(ip, "login")
-    if (securityCheck.blocked) {
-      return NextResponse.json(
-        { error: "Too many failed attempts. Please try again in 15 minutes." },
-        { status: 429 }
       )
     }
 
@@ -63,22 +54,6 @@ export async function POST(request: Request) {
         { status: 401 }
       )
     }
-
-    // Check if email is verified
-    const verified = await isEmailVerified(username)
-    if (!verified) {
-      return NextResponse.json(
-        { 
-          error: "Email not verified",
-          requiresVerification: true,
-          username: user.username,
-        },
-        { status: 403 }
-      )
-    }
-
-    // Clear security blocks on successful login
-    await clearSecurityBlock(ip, "login")
 
     // Update user info
     await updateUser(username, {
