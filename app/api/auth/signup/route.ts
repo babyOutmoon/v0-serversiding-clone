@@ -2,6 +2,33 @@ import { NextResponse } from "next/server"
 import { getUserByUsername, createUser } from "@/lib/db"
 import { rateLimit, getClientIP, RATE_LIMITS } from "@/lib/rate-limit"
 
+// Verify Cloudflare Turnstile token
+async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
+  const secretKey = process.env.TURNSTILE_SECRET_KEY
+  if (!secretKey) {
+    console.warn("Turnstile secret key not configured - skipping verification")
+    return true // Skip if not configured
+  }
+
+  try {
+    const formData = new FormData()
+    formData.append("secret", secretKey)
+    formData.append("response", token)
+    formData.append("remoteip", ip)
+
+    const response = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      { method: "POST", body: formData }
+    )
+
+    const data = await response.json()
+    return data.success === true
+  } catch (error) {
+    console.error("Turnstile verification error:", error)
+    return false
+  }
+}
+
 export async function POST(request: Request) {
   try {
     // Get client IP
@@ -16,7 +43,24 @@ export async function POST(request: Request) {
       )
     }
     
-    const { username, email, password } = await request.json()
+    const { username, email, password, turnstileToken } = await request.json()
+
+    // Verify Cloudflare Turnstile if token provided
+    if (turnstileToken) {
+      const isValidTurnstile = await verifyTurnstile(turnstileToken, ip)
+      if (!isValidTurnstile) {
+        return NextResponse.json(
+          { error: "Security verification failed. Please try again." },
+          { status: 400 }
+        )
+      }
+    } else if (process.env.TURNSTILE_SECRET_KEY) {
+      // If Turnstile is configured but no token provided
+      return NextResponse.json(
+        { error: "Security verification required" },
+        { status: 400 }
+      )
+    }
 
     if (!username || !email || !password) {
       return NextResponse.json(

@@ -1,22 +1,37 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, UserPlus, ArrowLeft, Loader2 } from "lucide-react"
+import { Eye, EyeOff, UserPlus, ArrowLeft, Loader2, Shield } from "lucide-react"
+import { Turnstile } from "@/components/turnstile"
 
 export default function SignupPage() {
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     username: "",
     email: "",
     password: "",
     confirmPassword: "",
   })
+
+  const handleTurnstileVerify = useCallback((token: string) => {
+    setTurnstileToken(token)
+  }, [])
+
+  const handleTurnstileError = useCallback(() => {
+    setTurnstileToken(null)
+    setError("Security verification failed. Please try again.")
+  }, [])
+
+  const handleTurnstileExpire = useCallback(() => {
+    setTurnstileToken(null)
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,6 +47,12 @@ export default function SignupPage() {
       return
     }
 
+    // Check Turnstile verification
+    if (!turnstileToken) {
+      setError("Please complete the security verification")
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -42,6 +63,7 @@ export default function SignupPage() {
           username: formData.username,
           email: formData.email,
           password: formData.password,
+          turnstileToken,
         }),
       })
 
@@ -171,6 +193,23 @@ export default function SignupPage() {
                 placeholder="Confirm your password"
                 required
               />
+            </div>
+
+            {/* Cloudflare Turnstile */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Shield className="h-4 w-4" />
+                <span>Security Verification</span>
+              </div>
+              <Turnstile 
+                onVerify={handleTurnstileVerify}
+                onError={handleTurnstileError}
+                onExpire={handleTurnstileExpire}
+                theme="dark"
+              />
+              {turnstileToken && (
+                <p className="text-xs text-green-500 text-center">Verified</p>
+              )}
             </div>
 
             <button

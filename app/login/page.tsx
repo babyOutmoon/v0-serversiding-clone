@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, LogIn, ArrowLeft, Loader2, AlertTriangle, X } from "lucide-react"
+import { Eye, EyeOff, LogIn, ArrowLeft, Loader2, AlertTriangle, X, Shield } from "lucide-react"
+import { Turnstile } from "@/components/turnstile"
 
 type BlacklistInfo = {
   reason: string
@@ -18,21 +19,45 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [blacklistInfo, setBlacklistInfo] = useState<BlacklistInfo | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     username: "",
     password: "",
   })
 
+  const handleTurnstileVerify = useCallback((token: string) => {
+    setTurnstileToken(token)
+  }, [])
+
+  const handleTurnstileError = useCallback(() => {
+    setTurnstileToken(null)
+    setError("Security verification failed. Please try again.")
+  }, [])
+
+  const handleTurnstileExpire = useCallback(() => {
+    setTurnstileToken(null)
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+
+    // Check Turnstile verification
+    if (!turnstileToken) {
+      setError("Please complete the security verification")
+      return
+    }
+
     setLoading(true)
 
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          turnstileToken,
+        }),
       })
 
       const data = await res.json()
@@ -205,6 +230,23 @@ export default function LoginPage() {
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
+            </div>
+
+            {/* Cloudflare Turnstile */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Shield className="h-4 w-4" />
+                <span>Security Verification</span>
+              </div>
+              <Turnstile 
+                onVerify={handleTurnstileVerify}
+                onError={handleTurnstileError}
+                onExpire={handleTurnstileExpire}
+                theme="dark"
+              />
+              {turnstileToken && (
+                <p className="text-xs text-green-500 text-center">Verified</p>
+              )}
             </div>
 
             <button
