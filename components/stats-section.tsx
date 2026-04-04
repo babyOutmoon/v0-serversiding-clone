@@ -138,8 +138,10 @@ export function StatsSection() {
 
   const fetchLiveStats = useCallback(async () => {
     try {
-      // Use statsOnly endpoint - doesn't require authentication
-      const res = await fetch("/api/games?statsOnly=true")
+      // Use statsOnly endpoint with cache-busting timestamp for fresh data
+      const res = await fetch(`/api/games?statsOnly=true&t=${Date.now()}`, {
+        cache: "no-store"
+      })
       const data = await res.json()
       if (data.stats) {
         setLiveStats(prev => ({

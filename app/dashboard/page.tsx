@@ -259,13 +259,16 @@ const fetchAdminData = useCallback(async () => {
     setLoading(false)
   }, [user, verifiedPermissions.isAdmin, verifiedPermissions.isOwner])
 
-// Fetch games for all users (sorted by players, filtering out games with 0 players on refresh)
+// Fetch games for all users with live player counts from Roblox API
   const fetchGames = useCallback(async () => {
     try {
-      const res = await fetch("/api/games")
+      // Add refresh=true and cache-busting timestamp to get live player counts
+      const res = await fetch(`/api/games?refresh=true&t=${Date.now()}`, {
+        cache: "no-store"
+      })
       const data = await res.json()
       
-      // Update stats (always available)
+      // Update stats (always available - now with live data from Roblox)
       if (data.stats) {
         setGameStats(data.stats)
       }
